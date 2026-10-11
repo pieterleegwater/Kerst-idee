@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jullie kerstspel · Kerstspel op maat</title>
+  <meta name="robots" content="noindex">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap"><a class="logo" href="/">🎄 Kerstspel op maat</a></div>
+  </header>
+  <main class="wrap" id="app"><p>Spel laden…</p></main>
+  <footer><div class="wrap">© 2026 Kerstspel op maat</div></footer>
+
+  <div class="host" id="host" aria-live="polite">
+    <div class="bar">
+      <span id="hostProgress"></span>
+      <button class="btn ghost" id="hostClose">Sluiten</button>
+    </div>
+    <div class="stage" id="hostStage"></div>
+    <div class="bar">
+      <button class="btn ghost" id="hostPrev">← Vorige</button>
+      <button class="btn" id="hostReveal">Toon antwoord</button>
+      <button class="btn ghost" id="hostNext">Volgende →</button>
+    </div>
+  </div>
+  <script src="spel.js"></script>
+</body>
+</html>

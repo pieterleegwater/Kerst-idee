@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kerstspel op maat · Het persoonlijke familiespel voor kerst</title>
+  <meta name="description" content="Een kerstquiz en spelavond over júllie familie of team. Vul in 3 minuten wat namen en weetjes in en krijg direct een compleet spel om te spelen of te printen.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="logo" href="/">🎄 Kerstspel op maat</a>
+      <a class="btn secondary" href="#maken">Maak jullie spel</a>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="wrap">
+      <div>
+        <span class="pill">Nieuw voor kerst 2026</span>
+        <h1>Het kerstspel dat over jullie gaat</h1>
+        <p class="lead">Geen saaie standaardquiz, maar een spelavond vol vragen over je eigen familie of collega's: wie is er dit jaar verhuisd, wie kan niet tegen spruitjes, wie zong er vals op de bruiloft? Vul in 3 minuten wat weetjes in en je krijgt direct een compleet spel.</p>
+        <a class="btn" href="#maken">Maak jullie spel · gratis voorproefje</a>
+        <p class="proof">✔ Klaar in 2 minuten · ✔ Speel op je telefoon of tv, of print het · ✔ Betalen met iDEAL</p>
+      </div>
+      <div class="hero-card" aria-hidden="true">
+        <div class="tag">Ronde 1 · Wie van de Jansens?</div>
+        <div class="q">Wie van ons is dit jaar drie keer de autosleutels kwijtgeraakt op vakantie?</div>
+        <div class="opt">Oma Riet</div>
+        <div class="opt ok">Peter</div>
+        <div class="opt">Sanne</div>
+        <div class="opt">Kees</div>
+        <p class="note">Spelleider: laat Peter het verhaal over Lloret de Mar vertellen 😄</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2>Zo werkt het</h2>
+      <div class="grid3">
+        <div class="step"><b class="n">1</b><h3>Vertel over jullie</h3><p>Namen, een paar weetjes per persoon en de hoogtepunten van dit jaar. Hoe meer je invult, hoe grappiger het spel.</p></div>
+        <div class="step"><b class="n">2</b><h3>Wij maken het spel</h3><p>Binnen een minuut staat er een spel met 4 rondes klaar: wie-van-ons, kerstquiz, raad-het-jaar en opdrachten.</p></div>
+        <div class="step"><b class="n">3</b><h3>Spelen maar</h3><p>Zet de spelleider-modus op de tv of telefoon, of print het spelboekje. Geen app of account nodig.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="alt">
+    <div class="wrap">
+      <h2>Prijzen</h2>
+      <p>Je ziet eerst gratis een stukje van jullie spel. Pas als je het leuk vindt, betaal je.</p>
+      <div class="prices">
+        <div class="price featured">
+          <h3>Familie-editie</h3>
+          <div class="amount">€9,95</div>
+          <ul><li>Tot 15 personen</li><li>4 rondes, ±30 vragen en opdrachten</li><li>Spelleider-modus + printbaar boekje</li><li>Ook leuk als cadeau voor de gastvrouw/-heer</li></ul>
+        </div>
+        <div class="price">
+          <h3>Team-editie</h3>
+          <div class="amount">€39</div>
+          <ul><li>Tot 40 collega's</li><li>Perfect voor de kerstborrel</li><li>Factuur op bedrijfsnaam</li><li>Goedkoper dan één ronde drankjes</li></ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="maken">
+    <div class="wrap">
+      <h2>Maak jullie spel</h2>
+      <form class="wizard" id="wizard">
+        <fieldset>
+          <legend>Voor wie is het?</legend>
+          <div class="choice">
+            <label><input type="radio" name="plan" value="familie" checked>Familie / vrienden</label>
+            <label><input type="radio" name="plan" value="team">Collega's / team</label>
+          </div>
+          <label for="groupName">Naam van de groep <small>(bijv. "de Jansens" of "Team Sales")</small></label>
+          <input type="text" id="groupName" name="groupName" required maxlength="60" placeholder="de Jansens">
+          <div class="row">
+            <div>
+              <label for="occasion">Wanneer spelen jullie?</label>
+              <select id="occasion" name="occasion">
+                <option value="kerstavond">Kerstavond</option>
+                <option value="eerste-kerstdag" selected>Eerste kerstdag</option>
+                <option value="tweede-kerstdag">Tweede kerstdag</option>
+                <option value="kerstborrel">Kerstborrel</option>
+                <option value="oud-en-nieuw">Oud en nieuw</option>
+              </select>
+            </div>
+            <div>
+              <label for="ages">Leeftijden</label>
+              <select id="ages" name="ages">
+                <option value="alle-leeftijden">Alle leeftijden</option>
+                <option value="volwassenen">Alleen volwassenen</option>
+                <option value="met-jonge-kinderen">Met jonge kinderen</option>
+              </select>
+            </div>
+            <div>
+              <label for="tone">Sfeer</label>
+              <select id="tone" name="tone">
+                <option value="gezellig">Gezellig</option>
+                <option value="plagerig">Lekker plagerig</option>
+                <option value="competitief">Fanatiek competitief</option>
+              </select>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Wie doen er mee? <span class="hint">Geef per persoon 1-3 weetjes, gescheiden door een puntkomma.</span></legend>
+          <div id="members"></div>
+          <button type="button" class="btn ghost" id="addMember">+ Persoon toevoegen</button>
+        </fieldset>
+
+        <fieldset>
+          <label for="yearHighlights">Hoogtepunten van dit jaar <small>(één per regel)</small></label>
+          <textarea id="yearHighlights" name="yearHighlights" maxlength="800" placeholder="Sanne en Tom zijn verhuisd naar Utrecht&#10;Opa werd 80 en gaf een feest in de tuin&#10;De hond at de verjaardagstaart op"></textarea>
+          <label for="traditions">Tradities of vaste grappen <small>(optioneel)</small></label>
+          <textarea id="traditions" name="traditions" maxlength="500" placeholder="Elk jaar brandt de gourmet de rookmelder af; papa doet altijd de 'speech'"></textarea>
+        </fieldset>
+
+        <p class="hint">Gebruik alleen informatie waarvan je weet dat de anderen het niet erg vinden. We gebruiken je gegevens alleen om dit spel te maken.</p>
+        <p class="error" id="formError" role="alert"></p>
+        <button class="btn" type="submit" id="submitBtn">Maak ons spel (gratis voorproefje)</button>
+      </form>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2>Veelgestelde vragen</h2>
+      <details><summary>Hoe lang duurt het spel?</summary><p>Ongeveer 45 tot 75 minuten, afhankelijk van hoe fanatiek jullie zijn. Je kunt ook rondes overslaan.</p></details>
+      <details><summary>Hebben de spelers iets nodig?</summary><p>Alleen pen en papier. De spelleider gebruikt een telefoon, tablet, laptop of het geprinte boekje.</p></details>
+      <details><summary>Kan ik het cadeau geven?</summary><p>Ja. Na betaling krijg je een link die je kunt doorsturen naar wie het spel gaat leiden.</p></details>
+      <details><summary>Hoe betaal ik?</summary><p>Met iDEAL, Bancontact of creditcard via Stripe. Je betaalt één keer, er is geen abonnement.</p></details>
+      <details><summary>Niet tevreden?</summary><p>Mail ons binnen 7 dagen en je krijgt je geld terug.</p></details>
+    </div>
+  </section>
+
+  <footer><div class="wrap">© 2026 Kerstspel op maat</div></footer>
+
+  <template id="memberTpl">
+    <div class="member">
+      <input type="text" name="name" placeholder="Naam" maxlength="40" aria-label="Naam">
+      <input type="text" name="facts" placeholder="Weetjes, bijv. kan niet koken; liep dit jaar de marathon" maxlength="300" aria-label="Weetjes">
+      <button type="button" class="remove" aria-label="Verwijder persoon">×</button>
+    </div>
+  </template>
+  <script src="app.js"></script>
+</body>
+</html>
