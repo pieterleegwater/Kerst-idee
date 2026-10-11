@@ -1,0 +1,17 @@
+name = "polder-liga"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "public"
+not_found_handling = "none"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "polderliga"
+# Vervang door het id dat `npx wrangler d1 create polderliga` teruggeeft.
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[triggers]
+crons = ["0 4 * * *"]

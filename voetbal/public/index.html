@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>De Polder Liga · Verzamel en ruil voetbalkaarten</title>
+  <meta name="description" content="Open elke dag gratis pakjes, verzamel alle 96 spelers van De Polder Liga en ruil met je vrienden.">
+  <meta name="theme-color" content="#0b1d14">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <a class="logo" href="#/">⚽ <span>De Polder Liga</span></a>
+    <nav id="nav" hidden>
+      <a href="#/">Pakjes</a>
+      <a href="#/album">Album</a>
+      <a href="#/ruilen">Ruilen <b id="tradeBadge" hidden></b></a>
+      <a href="#/winkel">Seizoenspas</a>
+      <a href="#/" data-logout>Uitloggen</a>
+    </nav>
+  </header>
+  <main id="view"></main>
+  <footer class="foot">
+    <a href="#/regels">Kansen &amp; regels</a> · Alleen voor 18+ · Kaarten hebben geen geldwaarde en zijn niet voor geld te verkopen.
+  </footer>
+  <div id="toast" role="status"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
