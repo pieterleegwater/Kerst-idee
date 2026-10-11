@@ -27,7 +27,7 @@
 - **Gratis voorproefje** (3 echte vragen over hun eigen familie): dat is de haak, want mensen zien hun eigen namen staan.
 - **Familie-editie: €9,95** eenmalig, tot 15 personen.
 - **Team-editie: €39** eenmalig, tot 40 collega's voor de kerstborrel.
-- Betalen met **iDEAL**, Bancontact of creditcard via Stripe.
+- Betalen met **iDEAL**, Bancontact of creditcard via **Mollie**.
 - Later uit te breiden: Oud & Nieuw-editie, verjaardag, bruiloft, vrijgezellenfeest, pensioen. Dan verkoop je het hele jaar door.
 
 **Rekenvoorbeeld** (een inschatting, geen garantie):
@@ -44,7 +44,7 @@ De grootste kosten zijn advertenties. Reken op €0,30 tot €1 per bezoeker via
 
 | Wanneer | Wat |
 |---|---|
-| **Week 1 (half okt)** | Domein kopen (bijv. *kerstspelopmaat.nl*), online zetten, Stripe live, spel testen met je eigen familie |
+| **Week 1 (half okt)** | Domein kopen (bijv. *kerstspelopmaat.nl*), gratis online zetten op Cloudflare, Mollie live, spel testen met je eigen familie |
 | **Week 2–3** | 5 TikTok/Reels-video's: "we speelden een quiz over onze eigen familie 😂". Echte reacties werken het best |
 | **Eind okt** | SEO-pagina's voor *kerstspel familie*, *kerstquiz maken*, *spelletjes kerstavond volwassenen*, *kerstborrel spel collega's*. Google indexeert traag, dus nu beginnen |
 | **Nov** | Advertenties starten met een klein budget. B2B: LinkedIn-posts en directe mails aan HR en office managers ("regel de kerstborrel in 5 minuten") |

@@ -1,0 +1,19 @@
+name = "kerstspel-op-maat"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# public/ wordt als statische site geserveerd; onbekende paden (zoals /api/*) gaan naar de Worker.
+[assets]
+directory = "public"
+not_found_handling = "none"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "kerstspel"
+# Vervang door het id dat `npx wrangler d1 create kerstspel` teruggeeft.
+database_id = "00000000-0000-0000-0000-000000000000"
+
+# Elke nacht om 03:00 UTC oude spellen opruimen.
+[triggers]
+crons = ["0 3 * * *"]

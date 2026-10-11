@@ -45,7 +45,7 @@ document.getElementById("wizard").addEventListener("submit", async (e) => {
     const res = await fetch("/api/games", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || "Er ging iets mis.");
-    location.href = `/spel.html?id=${json.id}`;
+    location.href = `/spel?id=${json.id}`;
   } catch (err) {
     error.textContent = err.message;
     btn.disabled = false;

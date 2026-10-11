@@ -1,18 +1,34 @@
-import { test, after } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
+import { createApp } from "../src/app.js";
+import { memoryStore } from "../src/store.js";
+import { fallbackGame } from "../lib/generate.js";
 
-process.env.NODE_ENV = "test";
-process.env.DATA_DIR = await mkdtemp(path.join(tmpdir(), "kerstspel-"));
-delete process.env.ANTHROPIC_API_KEY;
-delete process.env.STRIPE_SECRET_KEY;
-const { default: app } = await import("../server.js");
+const BASE = "https://kerstspel.example";
 
-const server = app.listen(0);
-const base = `http://localhost:${server.address().port}`;
-const post = (p, body) => fetch(base + p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) });
+function setup({ mollie = null } = {}) {
+  const store = memoryStore();
+  const app = createApp({ store, generate: async (input) => fallbackGame(input), mollie });
+  const call = (method, path, body, headers = { "Content-Type": "application/json" }) =>
+    app(new Request(BASE + path, { method, headers, body: body == null ? undefined : typeof body === "string" ? body : JSON.stringify(body) }));
+  return { store, call };
+}
+
+// Nep-Mollie die bijhoudt wat er gevraagd is.
+function fakeMollie() {
+  const payments = new Map();
+  return {
+    payments,
+    async createPayment(body) {
+      const id = `tr_${payments.size + 1}`;
+      payments.set(id, { id, status: "open", ...body });
+      return { id, _links: { checkout: { href: `https://www.mollie.com/checkout/${id}` } } };
+    },
+    async getPayment(id) {
+      return payments.get(id);
+    },
+  };
+}
 
 const input = {
   plan: "familie",
@@ -26,31 +42,61 @@ const input = {
   yearHighlights: "Opa werd 80\nDe hond at de taart op",
 };
 
-after(() => server.close());
+test("demo-modus: voorproefje, daarna direct ontgrendeld", async () => {
+  const { call } = setup();
+  const { id } = await (await call("POST", "/api/games", input)).json();
 
-test("maakt een spel, toont alleen voorproefje tot betaling", async () => {
-  const res = await post("/api/games", input);
-  assert.equal(res.status, 200);
-  const { id } = await res.json();
-
-  const preview = await (await fetch(`${base}/api/games/${id}`)).json();
+  const preview = await (await call("GET", `/api/games/${id}`)).json();
   assert.equal(preview.paid, false);
+  assert.equal(preview.demoMode, true);
   assert.equal(preview.game.rounds[0].questions.length, 3);
   assert.ok(preview.game.rounds.slice(1).every((r) => r.locked && !r.questions));
-  assert.ok(preview.game.lockedQuestions > 0);
   assert.equal(preview.game.finale, undefined);
-
   for (const q of preview.game.rounds[0].questions) if (q.options.length) assert.ok(q.options.includes(q.answer));
 
-  const checkout = await (await post(`/api/games/${id}/checkout`)).json();
-  assert.match(checkout.url, /spel\.html/);
-  const full = await (await fetch(`${base}/api/games/${id}`)).json();
+  await call("POST", `/api/games/${id}/checkout`);
+  const full = await (await call("GET", `/api/games/${id}`)).json();
   assert.equal(full.paid, true);
-  assert.ok(full.game.finale);
   assert.equal(full.game.rounds.length, 4);
 });
 
-test("weigert ongeldige invoer", async () => {
-  assert.equal((await post("/api/games", { groupName: "x", members: [{ name: "a" }] })).status, 400);
-  assert.equal((await fetch(`${base}/api/games/../../etc`)).status, 404);
+test("Mollie: pas ontgrendeld als de betaling echt 'paid' is", async () => {
+  const mollie = fakeMollie();
+  const { call } = setup({ mollie });
+  const { id } = await (await call("POST", "/api/games", input)).json();
+
+  const { url } = await (await call("POST", `/api/games/${id}/checkout`)).json();
+  assert.match(url, /mollie\.com\/checkout\/tr_1/);
+  const payment = mollie.payments.get("tr_1");
+  assert.deepEqual(payment.amount, { currency: "EUR", value: "9.95" });
+  assert.equal(payment.metadata.gameId, id);
+  assert.equal(payment.redirectUrl, `${BASE}/spel?id=${id}&betaald=1`);
+  assert.equal(payment.webhookUrl, `${BASE}/api/mollie/webhook`);
+
+  // Terug van Mollie maar nog niet betaald: blijft op slot.
+  assert.equal((await (await call("POST", `/api/games/${id}/verify`)).json()).paid, false);
+
+  // Mollie meldt via webhook dat er betaald is.
+  payment.status = "paid";
+  const hook = await call("POST", "/api/mollie/webhook", "id=tr_1", { "Content-Type": "application/x-www-form-urlencoded" });
+  assert.equal(hook.status, 200);
+  const full = await (await call("GET", `/api/games/${id}`)).json();
+  assert.equal(full.paid, true);
+  assert.ok(full.game.finale);
+});
+
+test("weigert ongeldige invoer en onbekende spellen", async () => {
+  const { call } = setup();
+  assert.equal((await call("POST", "/api/games", { groupName: "x", members: [{ name: "a" }] })).status, 400);
+  assert.equal((await call("GET", "/api/games/bestaat-niet")).status, 404);
+  assert.equal((await call("POST", "/api/games/00000000-0000-0000-0000-000000000000/checkout")).status, 404);
+});
+
+test("opruimen verwijdert oude spellen", async () => {
+  const store = memoryStore();
+  await store.put({ id: "oud", createdAt: "2025-01-01T00:00:00.000Z" });
+  await store.put({ id: "nieuw", createdAt: "2026-12-01T00:00:00.000Z" });
+  await store.deleteOlderThan("2026-01-01T00:00:00.000Z");
+  assert.equal(await store.get("oud"), null);
+  assert.ok(await store.get("nieuw"));
 });

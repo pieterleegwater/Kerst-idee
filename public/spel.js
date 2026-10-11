@@ -16,11 +16,12 @@ const euro = (cents) => `€${(cents / 100).toFixed(2).replace(".", ",")}`;
 async function load() {
   if (!id) return (app.textContent = "Geen spel gevonden.");
   let data;
-  const sessionId = params.get("session_id");
-  if (sessionId) {
-    const res = await fetch(`/api/games/${id}/verify`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId }) });
+  if (params.get("betaald")) {
+    // Terug van Mollie: laat de server de betaling controleren.
+    const res = await fetch(`/api/games/${id}/verify`, { method: "POST" });
     data = await res.json();
-    history.replaceState(null, "", `/spel.html?id=${id}`);
+    if (!data.paid) alert("We hebben je betaling nog niet ontvangen. Lukte het niet? Probeer het opnieuw.");
+    history.replaceState(null, "", `/spel?id=${id}`);
   } else {
     const res = await fetch(`/api/games/${id}`);
     if (!res.ok) return (app.textContent = "Dit spel bestaat niet (meer).");
@@ -89,12 +90,12 @@ function paywall(data) {
     el("h2", {}, `Nog ${data.game.lockedQuestions} vragen en opdrachten wachten op jullie`),
     el("p", {}, "Inclusief spelleider-modus voor tv of telefoon, printbaar spelboekje en de grote finale. Eenmalig betalen, geen abonnement."),
     btn,
-    el("p", { class: "hint", style: "color:#dfe9e3" }, data.demoMode ? "Testmodus: er wordt niets afgeschreven." : "Veilig betalen met iDEAL, Bancontact of creditcard. Niet tevreden? Geld terug.")
+    el("p", { class: "hint", style: "color:#dfe9e3" }, data.demoMode ? "Testmodus: er wordt niets afgeschreven." : "Veilig betalen met iDEAL, Bancontact of creditcard via Mollie. Niet tevreden? Geld terug.")
   );
 }
 
 async function share() {
-  const url = `${location.origin}/spel.html?id=${id}`;
+  const url = `${location.origin}/spel?id=${id}`;
   if (navigator.share) await navigator.share({ title: "Ons kerstspel", url }).catch(() => {});
   else {
     await navigator.clipboard.writeText(url);
