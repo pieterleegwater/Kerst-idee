@@ -1,7 +1,9 @@
--- DinoRijk, Postgres-versie van schema.sql (Netlify Database).
--- CHECK-constraints bewaken de spelregels: nooit onder 0 eieren of fossielen, nooit 0 exemplaren van een kaart.
-
-CREATE TABLE users (
+// Postgres-schema voor DinoRijk (Supabase). Wordt bij de eerste aanvraag automatisch aangemaakt;
+// alles is "IF NOT EXISTS", dus opnieuw uitvoeren kan geen kwaad.
+// Row Level Security staat aan zonder policies: zo kan niemand via de publieke Supabase-API
+// (met de anon key) bij deze tabellen. Alleen de server, via de databaseverbinding, kan erbij.
+export const PG_SCHEMA = `
+CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   username TEXT NOT NULL,
   pass_hash TEXT NOT NULL,
@@ -14,22 +16,22 @@ CREATE TABLE users (
   bought_eggs INTEGER NOT NULL DEFAULT 0 CHECK (bought_eggs >= 0),
   fossils INTEGER NOT NULL DEFAULT 0 CHECK (fossils >= 0)
 );
-CREATE UNIQUE INDEX users_username_lower ON users (lower(username));
+CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower ON users (lower(username));
 
-CREATE TABLE sessions (
+CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   expires_at BIGINT NOT NULL
 );
 
-CREATE TABLE collection (
+CREATE TABLE IF NOT EXISTS collection (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   card_id TEXT NOT NULL,
   count INTEGER NOT NULL CHECK (count >= 1),
   PRIMARY KEY (user_id, card_id)
 );
 
-CREATE TABLE payments (
+CREATE TABLE IF NOT EXISTS payments (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   product TEXT NOT NULL,
@@ -37,13 +39,20 @@ CREATE TABLE payments (
   status TEXT NOT NULL,
   created_at BIGINT NOT NULL
 );
-CREATE INDEX payments_user ON payments (user_id, created_at);
+CREATE INDEX IF NOT EXISTS payments_user ON payments (user_id, created_at);
 
-CREATE TABLE prints (
+CREATE TABLE IF NOT EXISTS prints (
   card_id TEXT NOT NULL,
   serial INTEGER NOT NULL,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at BIGINT NOT NULL,
   PRIMARY KEY (card_id, serial)
 );
-CREATE INDEX prints_user ON prints (user_id);
+CREATE INDEX IF NOT EXISTS prints_user ON prints (user_id);
+
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE collection ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE prints ENABLE ROW LEVEL SECURITY;
+`;

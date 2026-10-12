@@ -39,14 +39,16 @@ export function testDb() {
   };
 }
 
-// Postgres-variant (PGlite, Postgres in WebAssembly) met dezelfde migratie als Netlify Database.
+// Postgres-variant (PGlite, Postgres in WebAssembly) met hetzelfde schema als Supabase.
 import { PGlite } from "@electric-sql/pglite";
 import { pgDatabase } from "../src/pg.js";
+import { PG_SCHEMA } from "../src/pg-schema.js";
 
 export function testPgDb() {
   const ready = (async () => {
     const pg = new PGlite();
-    await pg.exec(readFileSync(new URL("../netlify/database/migrations/20261012120000_init.sql", import.meta.url), "utf8"));
+    await pg.exec(PG_SCHEMA);
+    await pg.exec(PG_SCHEMA); // tweede keer mag ook (cold starts)
     return pg;
   })();
   const query = async (text, params) => {

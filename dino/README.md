@@ -34,7 +34,7 @@ Een virtueel verzamelspel met **eigen dinokaarten**: 96 dino's in 6 rijken (Vulk
   Verstenen levert ×4 op voor Holo, ×10 voor Goudfolie en ×40 voor Prisma. Oerkristal kun je niet verstenen.
 - **Geen ruilen, geen verkopen, geen uitbetalen.** Met fossielen koop je **nooit** eieren.
 
-Draait op **Netlify** (Functions + Netlify Database, Postgres) of op **Cloudflare Workers + D1**. Dezelfde code werkt op beide.
+Draait op **Netlify + Supabase** (Postgres) of op **Cloudflare Workers + D1**. Dezelfde code werkt op beide.
 
 ## Kansspelwet
 
@@ -47,19 +47,23 @@ Dit volgt het model van o.a. Hearthstone: je koopt eieren met geld, maar wat eru
 
 Volgens de Kansspelautoriteit is vooral overdraagbaarheid (en daarmee geldwaarde) bepalend voor of een loot box een kansspel is. Dit is een ontwerp om het risico te beperken, geen juridisch advies: **laat het vóór de lancering checken door een kansspeljurist.**
 
-## Online zetten op Netlify
+## Online zetten op Netlify + Supabase
 
-De repo bevat `netlify.toml` (in de hoofdmap), dus Netlify weet zelf dat het om de map `dino/` gaat.
+De repo bevat `netlify.toml` (in de hoofdmap), dus Netlify weet zelf dat het om de map `dino/` gaat. Accounts (gebruikersnaam + wachtwoord) regelt het spel zelf. Supabase is de database.
 
-1. Open je project op app.netlify.com → **Project configuration → Build & deploy → Continuous deployment → Link repository**. Kies GitHub → `kerst-idee` → branch `claude/kerst-familiespel`.
-2. Ga naar **Project configuration → Environment variables** en voeg `MOLLIE_API_KEY` toe (eerst `test_...`, later `live_...`).
-   ⚠️ Zonder deze sleutel draait de site in testmodus en zijn eieren kopen gratis. Zet hem erin voordat je de link deelt.
-3. Klik **Deploys → Trigger deploy**. Netlify maakt de database automatisch aan (door `@netlify/database` in `package.json`) en voert `netlify/database/migrations/` uit.
+1. **Supabase-verbinding:** open je project op supabase.com → knop **Connect** (bovenaan) → **Transaction pooler** → kopieer de URI (poort 6543) en vervang `[YOUR-PASSWORD]` door je databasewachtwoord.
+2. **Netlify → Project configuration → Environment variables:**
+   - `SUPABASE_DB_URL` = die URI (markeer hem als geheim)
+   - `MOLLIE_API_KEY` = eerst `test_...`, later `live_...`. ⚠️ Zonder deze sleutel is eieren kopen gratis (testmodus).
+3. **Repo koppelen:** Project configuration → Build & deploy → Link repository → GitHub → `kerst-idee`, branch `claude/kerst-familiespel`.
+4. **Deploys → Trigger deploy.** De tabellen worden bij de eerste aanvraag automatisch aangemaakt.
+
+Veiligheid: de tabellen hebben Row Level Security aan, zonder policies. Via de publieke Supabase-API (met de anon key) kan niemand erbij; alleen de server via `SUPABASE_DB_URL`. De variabelen `SUPABASE_URL`, `SUPABASE_ANON_KEY` en `SUPABASE_SERVICE_KEY` gebruikt het spel niet.
 
 Bestanden voor Netlify:
 - `netlify/functions/api.mjs`: alle `/api/*`-verzoeken
 - `netlify/functions/cleanup.mjs`: ruimt elke dag verlopen sessies op
-- `netlify/database/migrations/`: tabellen (Postgres)
+- `src/supabase.js` + `src/pg-schema.js`: verbinding en tabellen
 - `src/pg.js`: koppelt Postgres aan dezelfde app-code als Cloudflare
 
 ## Online zetten op Cloudflare (alternatief)
