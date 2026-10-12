@@ -120,7 +120,7 @@ test("eieren kopen via Mollie: pas na 'paid', één keer geleverd, gratis eieren
   const { client } = setup({ mollie });
   const a = client();
   await register(a, "kim");
-  const { body } = await a("POST", "/api/checkout", { product: "eieren5" });
+  const { body } = await a("POST", "/api/checkout", { waiver: true, product: "eieren5" });
   assert.match(body.url, /mollie\.com\/checkout\/tr_1/);
   assert.deepEqual(mollie.payments.get("tr_1").amount, { currency: "EUR", value: "3.99" });
   assert.equal((await a("GET", "/api/me")).body.packs.bought, 0);
@@ -141,7 +141,7 @@ test("seizoenspas via Mollie geeft snellere gratis eieren", async () => {
   const { client } = setup({ mollie });
   const a = client();
   await register(a, "pas");
-  await a("POST", "/api/checkout", { product: "pass" });
+  await a("POST", "/api/checkout", { waiver: true, product: "pass" });
   mollie.payments.get("tr_1").status = "paid";
   await a("POST", "/api/checkout/verify", {});
   const me = (await a("GET", "/api/me")).body;
@@ -153,12 +153,12 @@ test("uitgavegrens van €100 per 30 dagen", async () => {
   const { client, tick } = setup();
   const a = client();
   await register(a, "grens");
-  for (let i = 0; i < 5; i++) assert.equal((await a("POST", "/api/checkout", { product: "eieren30" })).status, 200); // 5 × 17,99
-  assert.equal((await a("POST", "/api/checkout", { product: "eieren30" })).status, 429);
-  assert.equal((await a("POST", "/api/checkout", { product: "eieren5" })).status, 200); // 89,95 + 3,99 past nog
+  for (let i = 0; i < 5; i++) assert.equal((await a("POST", "/api/checkout", { waiver: true, product: "eieren30" })).status, 200); // 5 × 17,99
+  assert.equal((await a("POST", "/api/checkout", { waiver: true, product: "eieren30" })).status, 429);
+  assert.equal((await a("POST", "/api/checkout", { waiver: true, product: "eieren5" })).status, 200); // 89,95 + 3,99 past nog
   tick(31 * 24 * HOUR);
   await a("POST", "/api/login", { username: "grens", email: "grens@test.nl", password: "geheim123" }); // sessie was verlopen
-  assert.equal((await a("POST", "/api/checkout", { product: "eieren30" })).status, 200);
+  assert.equal((await a("POST", "/api/checkout", { waiver: true, product: "eieren30" })).status, 200);
 });
 
 test("verstenen en maken: fossielen, geen Oerkristal, geen eieren van fossielen", async () => {
@@ -318,7 +318,7 @@ test("gelijktijdig: bestedingslimiet, registraties per netwerk en dezelfde naam 
   const { client } = setup();
   const a = client();
   await register(a, "haast");
-  const buys = await Promise.all(Array.from({ length: 12 }, () => a("POST", "/api/checkout", { product: "eieren30" })));
+  const buys = await Promise.all(Array.from({ length: 12 }, () => a("POST", "/api/checkout", { waiver: true, product: "eieren30" })));
   assert.equal(buys.filter((r) => r.status === 200).length, 5); // 5 × 17,99 past onder €100
   assert.equal((await a("GET", "/api/me")).body.packs.bought, 150);
 
@@ -335,7 +335,7 @@ test("rare invoer geeft nette 4xx in plaats van een serverfout", async () => {
   const a = client();
   await register(a, "raar");
   const cases = [
-    ["/api/login", "null"], ["/api/register", "[1,2]"], ["/api/checkout", { product: "constructor" }], ["/api/checkout", { product: "__proto__" }],
+    ["/api/login", "null"], ["/api/register", "[1,2]"], ["/api/checkout", { waiver: true, product: "constructor" }], ["/api/checkout", { waiver: true, product: "__proto__" }],
     ["/api/fossils/craft", { key: "vuur-1:constructor" }], ["/api/fossils/dust", { key: ["vuur-1"] }], ["/api/fossils/dust", { key: "vuur-1", count: 1.5 }],
     ["/api/login", { login: ["a"], password: {} }], ["/api/account/email", { email: ["a@b.nl"] }],
   ];
@@ -365,19 +365,19 @@ test("Mollie: mislukte aanvraag geeft limiet terug, webhook vindt reservering, 2
   await register(a, "mol");
   const create = mollie.createPayment;
   mollie.createPayment = async () => { throw new Error("Mollie 503"); };
-  assert.equal((await a("POST", "/api/checkout", { product: "eieren30" })).status, 500);
+  assert.equal((await a("POST", "/api/checkout", { waiver: true, product: "eieren30" })).status, 500);
   assert.equal((await a("GET", "/api/me")).body.spendLeft, RULES.spendCap30d); // reservering is weer vrijgegeven
   mollie.createPayment = create;
 
   // Twee passen tegelijk betaald: allebei geleverd.
-  await Promise.all([a("POST", "/api/checkout", { product: "pass" }), a("POST", "/api/checkout", { product: "pass" })]);
+  await Promise.all([a("POST", "/api/checkout", { waiver: true, product: "pass" }), a("POST", "/api/checkout", { waiver: true, product: "pass" })]);
   for (const p of mollie.payments.values()) p.status = "paid";
   await Promise.all([webhook(a, "tr_1"), webhook(a, "tr_2"), a("POST", "/api/checkout/verify", {})]);
   const days = ((await a("GET", "/api/me")).body.premiumUntil - (await db.prepare("SELECT MIN(created_at) AS t FROM payments").first()).t) / (24 * HOUR);
   assert.equal(Math.round(days), 60);
 
   // Mollie-id niet opgeslagen (bijv. time-out na het aanmaken): de webhook koppelt hem alsnog via de metadata.
-  await a("POST", "/api/checkout", { product: "eieren5" });
+  await a("POST", "/api/checkout", { waiver: true, product: "eieren5" });
   await db.prepare("UPDATE payments SET id = ?, status = 'reserving' WHERE id = 'tr_3'").bind(mollie.payments.get("tr_3").metadata.ref).run();
   mollie.payments.get("tr_3").status = "paid";
   await webhook(a, "tr_3");
@@ -386,7 +386,7 @@ test("Mollie: mislukte aanvraag geeft limiet terug, webhook vindt reservering, 2
   // Betaald maar van iemand anders: niet geleverd en ook niet op 'paid' gezet.
   const b = client();
   await register(b, "ander");
-  await b("POST", "/api/checkout", { product: "eieren5" });
+  await b("POST", "/api/checkout", { waiver: true, product: "eieren5" });
   mollie.payments.get("tr_4").status = "paid";
   mollie.payments.get("tr_4").metadata.userId = "iemand-anders";
   await webhook(b, "tr_4");
@@ -403,4 +403,37 @@ test("wachtwoord reset maakt andere resetlinks ongeldig", async () => {
   const [t1, t2] = mails.map((m) => m.text.match(/token=([a-f0-9]+)/)[1]);
   assert.equal((await a("POST", "/api/password/reset", { token: t2, password: "nieuwwachtwoord" })).status, 200);
   assert.equal((await a("POST", "/api/password/reset", { token: t1, password: "hackerwachtwoord" })).status, 400);
+});
+
+test("aankoop vraagt instemming met directe levering (geen bedenktijd)", async () => {
+  const { client } = setup();
+  const a = client();
+  await register(a, "vinkje");
+  assert.equal((await a("POST", "/api/checkout", { product: "eieren5" })).status, 400);
+  assert.equal((await a("POST", "/api/checkout", { product: "eieren5", waiver: "ja" })).status, 400);
+  assert.equal((await a("POST", "/api/checkout", { product: "eieren5", waiver: true })).status, 200);
+});
+
+test("AVG: gegevens downloaden en account verwijderen (betalingen blijven anoniem)", async () => {
+  const { client, db } = setup();
+  const a = client();
+  await register(a, "weg");
+  await a("POST", "/api/packs/open");
+  await a("POST", "/api/checkout", { waiver: true, product: "eieren5" });
+  const exp = await a("GET", "/api/account/export");
+  assert.equal(exp.status, 200);
+  assert.equal(exp.body.account.email, "weg@test.nl");
+  assert.equal(exp.body.payments.length, 1);
+  assert.ok(Object.keys(exp.body.collection).length > 0);
+
+  assert.equal((await a("POST", "/api/account/delete", { password: "fout-wachtwoord" })).status, 401);
+  assert.equal((await a("POST", "/api/account/delete", { password: "geheim123" })).status, 200);
+  assert.equal((await a("GET", "/api/me")).status, 401);
+  assert.equal((await client()("POST", "/api/login", { login: "weg", password: "geheim123" })).status, 401);
+  assert.equal((await client()("POST", "/api/login", { login: "weg@test.nl", password: "geheim123" })).status, 401);
+  const top = (await client()("GET", "/api/leaderboard")).body.top;
+  assert.ok(!top.some((r) => r.username === "weg" || r.username.startsWith("verwijderd_")));
+  assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM payments").first()).n, 1); // fiscale bewaarplicht
+  assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM collection").first()).n, 0);
+  await register(client(), "weg"); // naam en e-mail zijn weer vrij
 });

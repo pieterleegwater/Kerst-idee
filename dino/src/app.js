@@ -342,6 +342,37 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
       return json({ ok: true, email });
     },
 
+    // AVG: al je gegevens als bestand (inzage en overdraagbaarheid).
+    "GET /api/account/export": async (_req, _body, user) => {
+      const collection = await all("SELECT card_id, count FROM collection WHERE user_id = ? ORDER BY card_id", user.id);
+      const prints = await all("SELECT card_id, serial, created_at FROM prints WHERE user_id = ? ORDER BY created_at", user.id);
+      const payments = await all("SELECT product, amount, status, created_at FROM payments WHERE user_id = ? AND status != 'reserving' ORDER BY created_at", user.id);
+      const data = {
+        exportedAt: new Date(now()).toISOString(),
+        account: { username: user.username, email: user.email || null, createdAt: user.created_at },
+        game: { packsOpened: user.packs_opened, fossils: user.fossils, boughtEggsLeft: user.bought_eggs, score: user.score, premiumUntil: user.premium_until > now() ? new Date(user.premium_until).toISOString() : null },
+        collection: Object.fromEntries(collection.map((r) => [r.card_id, r.count])),
+        oerkristal: prints.map((p) => ({ card: p.card_id, serial: p.serial, at: new Date(p.created_at).toISOString() })),
+        payments: payments.map((p) => ({ product: p.product, amountEuro: p.amount / 100, status: p.status, at: new Date(p.created_at).toISOString() })),
+      };
+      return new Response(JSON.stringify(data, null, 2), {
+        headers: { "Content-Type": "application/json; charset=utf-8", "Content-Disposition": `attachment; filename="dinorijk-gegevens-${user.username}.json"` },
+      });
+    },
+
+    // AVG: account verwijderen. Persoonsgegevens en kaarten gaan weg; betalingen blijven anoniem bewaard (fiscale bewaarplicht).
+    "POST /api/account/delete": async (_req, body, user) => {
+      if (!(await verifyPassword(String(body.password || ""), user.pass_salt, user.pass_hash))) return fail(401, "Je wachtwoord klopt niet.");
+      const { hash, salt } = await hashPassword(randomHex(32)); // niemand kan hier nog mee inloggen
+      await db.batch([
+        db.prepare("UPDATE users SET username = ?, email = NULL, pass_hash = ?, pass_salt = ?, score = 0, fossils = 0, bought_eggs = 0, pack_credits = 0, premium_until = 0 WHERE id = ?").bind(`verwijderd_${randomHex(6)}`, hash, salt, user.id),
+        db.prepare("DELETE FROM collection WHERE user_id = ?").bind(user.id),
+        db.prepare("DELETE FROM password_resets WHERE user_id = ?").bind(user.id),
+        db.prepare("DELETE FROM sessions WHERE user_id = ?").bind(user.id),
+      ]);
+      return json({ ok: true }, 200, { "Set-Cookie": "sid=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0" });
+    },
+
     // Gratis eieren gaan eerst; daarna de gekochte.
     "POST /api/packs/open": async (_req, _body, user) => {
       const pack = packState(user, now());
@@ -434,6 +465,8 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
       const productId = typeof body.product === "string" ? body.product : "";
       if (!Object.hasOwn(PRODUCTS, productId)) return fail(400, "Onbekend product.");
       const product = PRODUCTS[productId];
+      // Digitale inhoud: de koper moet vooraf instemmen met directe levering en afstand doen van de bedenktijd (art. 6:230p BW).
+      if (body.waiver !== true) return fail(400, "Vink eerst aan dat je je aankoop direct wilt ontvangen.");
       // Eerst het bedrag reserveren binnen de limiet (in één keer, ook bij gelijktijdige klikken), dan pas naar Mollie.
       const ref = `${demoMode ? "demo" : "res"}_${randomHex(12)}`;
       const [, reserved] = await db.batch([

@@ -1,5 +1,6 @@
 import { dinoSvg, setDinoImages } from "./art.js";
 import { renderShareImage, shareBlob, downloadBlob } from "./share.js";
+import { privacyHtml, termsHtml } from "./legal.js";
 
 const view = document.getElementById("view");
 const nav = document.getElementById("nav");
@@ -310,7 +311,7 @@ function authView() {
       el("input", { id: "p", name: "password", type: "password", autocomplete: mode === "login" ? "current-password" : "new-password", required: true, minlength: 8 }),
       mode === "login" ? el("p", { class: "small" }, el("a", { href: "#/vergeten" }, "Wachtwoord vergeten?")) : null,
       mode === "register" ? el("input", { name: "website", class: "hp", tabindex: "-1", autocomplete: "off", "aria-hidden": "true" }) : null,
-      mode === "register" ? el("label", { class: "check" }, el("input", { type: "checkbox", name: "adult", required: true }), "Ik ben 18 jaar of ouder en snap dat kaarten geen geldwaarde hebben.") : null,
+      mode === "register" ? el("label", { class: "check" }, el("input", { type: "checkbox", name: "adult", required: true }), "Ik ben 18 jaar of ouder, snap dat kaarten geen geldwaarde hebben en ga akkoord met de ", el("a", { href: "#/voorwaarden", target: "_blank" }, "voorwaarden"), " en het ", el("a", { href: "#/privacy", target: "_blank" }, "privacybeleid"), ".") : null,
       err,
       el("button", { class: "btn", type: "submit" }, mode === "register" ? "Start met 2 gratis eieren" : "Inloggen")
     );
@@ -691,10 +692,24 @@ async function shopView(params) {
   }
   const { products, rules } = catalog;
   const euro = (c) => `€${(c / 100).toFixed(2).replace(".", ",")}`;
+  // Digitale inhoud: vooraf instemmen met directe levering en afzien van de bedenktijd (wettelijk verplicht).
+  const waiver = el("input", { type: "checkbox", id: "waiver" });
+  const waiverBox = el(
+    "label",
+    { class: "panel check waiver", for: "waiver" },
+    waiver,
+    el("span", {}, "Ik wil mijn aankoop direct ontvangen en weet dat ik daardoor mijn herroepingsrecht (14 dagen bedenktijd) verlies. ", el("a", { href: "#/voorwaarden" }, "Voorwaarden"))
+  );
+  waiver.addEventListener("change", () => waiverBox.classList.remove("needs"));
   const buy = (id) => async (e) => {
+    if (!waiver.checked) {
+      waiverBox.classList.add("needs");
+      waiverBox.scrollIntoView({ behavior: "smooth", block: "center" });
+      return toast("Vink eerst het vakje boven de producten aan.");
+    }
     e.target.disabled = true;
     try {
-      const { url } = await api("/api/checkout", { product: id });
+      const { url } = await api("/api/checkout", { product: id, waiver: true });
       if (url.startsWith("/")) {
         location.hash = url.slice(1);
         route();
@@ -709,6 +724,7 @@ async function shopView(params) {
     "div",
     {},
     el("h1", {}, "Winkel"),
+    waiverBox,
     el(
       "div",
       { class: "shop" },
@@ -748,6 +764,50 @@ async function shopView(params) {
       ),
       catalog.demoMode ? el("p", { class: "muted" }, "Testmodus: er wordt niets afgeschreven.") : el("p", { class: "muted" }, "Betalen met iDEAL, Bancontact of creditcard via Mollie.")
     )
+  );
+}
+
+function accountView() {
+  const pw = el("input", { type: "password", required: true, autocomplete: "current-password", placeholder: "Je wachtwoord" });
+  const sure = el("input", { type: "checkbox", required: true });
+  const del = el(
+    "form",
+    { class: "panel danger" },
+    el("h2", {}, "Account verwijderen"),
+    el("p", { class: "muted" }, "Je gebruikersnaam, e-mailadres, wachtwoord, kaarten, fossielen en ongebruikte eieren worden direct en definitief gewist. Dit kan niet ongedaan worden gemaakt. Betaalgegevens bewaren we zonder je naam, omdat de wet dat verplicht."),
+    pw,
+    el("label", { class: "check" }, sure, "Ja, ik wil mijn account en al mijn kaarten definitief verwijderen."),
+    el("button", { class: "btn danger", type: "submit" }, "Account verwijderen")
+  );
+  del.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!confirm("Weet je het zeker? Al je kaarten zijn daarna voorgoed weg.")) return;
+    try {
+      await api("/api/account/delete", { password: pw.value });
+      me = null;
+      await refreshMe();
+      location.hash = "#/";
+      toast("Je account is verwijderd. Bedankt voor het spelen!");
+    } catch (ex) {
+      toast(ex.message);
+    }
+  });
+  return el(
+    "div",
+    { class: "account" },
+    el("h1", {}, "Mijn account"),
+    el(
+      "div",
+      { class: "panel" },
+      el("p", {}, "Gebruikersnaam: ", el("b", {}, me.username)),
+      el("p", {}, "E-mailadres: ", el("b", {}, me.email || "nog niet ingesteld")),
+      me.premiumUntil ? el("p", {}, `Seizoenspas actief tot ${new Date(me.premiumUntil).toLocaleDateString("nl-NL")}`) : null,
+      el("p", {}, el("a", { class: "btn ghost small", href: "/api/account/export", download: "" }, "⬇️ Download mijn gegevens")),
+      el("p", { class: "muted small" }, "Lees hoe we met je gegevens omgaan in het ", el("a", { href: "#/privacy" }, "privacybeleid"), ".")
+    ),
+    emailBanner(),
+    el("br"),
+    del
   );
 }
 
@@ -817,9 +877,12 @@ async function route(keepOverlay) {
     else if (path === "/ranglijst") node = await leaderboardView();
     else if (path === "/reset") node = resetView(params);
     else if (path === "/vergeten") node = forgotView();
+    else if (path === "/privacy") node = privacyHtml();
+    else if (path === "/voorwaarden") node = termsHtml({ spendCap: catalog.rules.spendCap30d, passDays: catalog.products.pass.days });
     else if (!me) node = authView();
     else if (path === "/album") node = albumView();
     else if (path === "/fossielen") node = fossilsView();
+    else if (path === "/account") node = accountView();
     else if (path === "/winkel") node = await shopView(params);
     else node = packsView();
     view.replaceChildren(node);
