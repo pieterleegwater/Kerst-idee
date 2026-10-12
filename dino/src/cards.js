@@ -102,6 +102,7 @@ function buildCatalog() {
         type: sp.type,
         pos: TYPES[sp.type].code,
         species: sp.species,
+        art: sp.nick.toLowerCase(), // bestandsnaam van het plaatje: public/img/dino/<art>.png
         fact: sp.fact,
         rarity,
         rating,

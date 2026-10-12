@@ -1,4 +1,4 @@
-import { dinoSvg } from "./art.js";
+import { dinoSvg, setDinoImages } from "./art.js";
 
 const view = document.getElementById("view");
 const nav = document.getElementById("nav");
@@ -762,6 +762,11 @@ async function route(keepOverlay) {
 }
 
 window.addEventListener("hashchange", route);
+// Welke echte dino-plaatjes er zijn (tools/slice_grid.py schrijft dit bestand).
+await fetch("/img/dino/manifest.json")
+  .then((r) => (r.ok ? r.json() : { images: [] }))
+  .then((m) => setDinoImages(m.images || []))
+  .catch(() => {});
 try {
   catalog = await api("/api/catalog");
   await refreshMe();

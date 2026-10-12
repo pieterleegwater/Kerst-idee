@@ -1,6 +1,19 @@
 // Tekent elke dino als SVG op basis van soort, rijk en een vast "look"-getal.
 // Geen plaatjes van anderen: alles wordt hier gegenereerd.
 
+// Echte plaatjes (public/img/dino/<naam>.png) die beschikbaar zijn; anders tekenen we de dino zelf.
+let IMAGES = new Set();
+export function setDinoImages(names) {
+  IMAGES = new Set(names);
+}
+
+// Waar het plaatje in de scène komt (viewBox 120×90). Landdieren staan op de grond, vliegers en zwemmers zweven.
+function imageDino(card) {
+  const box = card.type === "ptero" ? [4, 4, 112, 70, "xMidYMid meet"] : card.type === "zee" ? [2, 12, 116, 66, "xMidYMid meet"] : [4, 8, 112, 76, "xMidYMax meet"];
+  const [x, y, w, h, fit] = box;
+  return `<image href="/img/dino/${card.art}.png" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="${fit}"/>`;
+}
+
 const BODY = {
   vuur: ["#e85d04", "#c1121f", "#f48c06"],
   ijs: ["#90e0ef", "#bde0fe", "#5e9ed6"],
@@ -204,11 +217,14 @@ export function dinoSvg(card, group, { variant = "normaal", silhouette = false }
     <radialGradient id="bd${id}" cx=".35" cy=".25" r=".95"><stop offset="0" stop-color="${shade(base, 0.45)}"/><stop offset=".5" stop-color="${base}"/><stop offset="1" stop-color="${shade(base, -0.45)}"/></radialGradient>
     ${glow ? `<filter id="gl${id}" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="0" stdDeviation="2.4" flood-color="${glowColor}" flood-opacity=".95"/></filter>` : ""}
   </defs>`;
+  const legendScene = card.rarity === "icoon" && IMAGES.has(`legend-${card.art}`) && !silhouette;
   const back = silhouette
     ? `<rect width="120" height="90" fill="#120c07"/><circle cx="60" cy="48" r="38" fill="${group.colors[0]}" opacity=".18"/>`
-    : scene(card.group, group.colors, r, id, { variant, legendary: card.rarity === "icoon" });
-  const ground = flying || swimming ? "" : `<ellipse cx="58" cy="81" rx="42" ry="5" fill="#000" opacity=".4"/>`;
-  const dino = DRAW[card.type](`url(#bd${id})`, BELLY[card.group], accent, eyeColor, r, card.species);
+    : legendScene
+      ? `<image href="/img/dino/legend-${card.art}.png" x="-4" y="-20" width="128" height="128" preserveAspectRatio="xMidYMid slice"/>`
+      : scene(card.group, group.colors, r, id, { variant, legendary: card.rarity === "icoon" });
+  const ground = flying || swimming || (card.rarity === "icoon" && IMAGES.has(`legend-${card.art}`)) ? "" : `<ellipse cx="58" cy="81" rx="42" ry="5" fill="#000" opacity=".4"/>`;
+  const dino = legendScene ? "" : IMAGES.has(card.art) ? imageDino(card) : DRAW[card.type](`url(#bd${id})`, BELLY[card.group], accent, eyeColor, r, card.species);
   const shift = flying ? 8 : swimming ? 4 : 0;
   const vignette = silhouette || variant === "kristal" ? "" : `<rect width="120" height="90" fill="url(#vg${id})"/>`;
   // Full-art (Prisma, Oerkristal): vierkantere uitsnede zodat de hele dino in beeld blijft.
