@@ -1,4 +1,4 @@
-import { CARDS, GROUPS, GAME_NAME, TYPES, PUBLISHED_ODDS, RARITIES, SEASON, VARIANTS, KRISTAL_CAP, RARITY_POINTS, drawPack, cryptoRandom, keyOf, parseKey, pointsOf } from "./cards.js";
+import { CARDS, GROUPS, GAME_NAME, TYPES, PUBLISHED_ODDS, RARITIES, SEASON, VARIANTS, KRISTAL_CAP, RARITY_POINTS, FOSSILS, drawPack, cryptoRandom, keyOf, parseKey, pointsOf, dustValue, craftCost } from "./cards.js";
 import { hashPassword, randomHex, verifyPassword } from "./auth.js";
 import { centsToMollie } from "./mollie.js";
 
@@ -8,18 +8,24 @@ const DAY = 24 * HOUR;
 export const RULES = {
   free: { interval: 12 * HOUR, max: 2 },
   premium: { interval: 6 * HOUR, max: 4 },
-  tradesPerDay: 5,
-  openTradesMax: 10,
   sessionDays: 30,
+  // Bescherming: maximaal zoveel uitgeven per 30 dagen (in centen).
+  spendCap30d: 10000,
 };
 
-export const PASS = { label: "Seizoenspas (30 dagen)", price: 499, days: 30 };
+// Wat je kunt kopen. Eieren zijn het enige wat je met geld koopt; fossielen kun je nooit kopen of inwisselen voor eieren.
+export const PRODUCTS = {
+  eieren5: { label: "5 eieren", price: 399, eggs: 5 },
+  eieren12: { label: "12 eieren", price: 799, eggs: 12, tag: "Meest gekozen" },
+  eieren30: { label: "30 eieren", price: 1799, eggs: 30, tag: "Beste prijs per ei" },
+  pass: { label: "Seizoenspas (30 dagen)", price: 499, days: 30 },
+};
 
 const json = (body, status = 200, headers = {}) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8", ...headers } });
 const fail = (status, error) => json({ error }, status);
 
-// Pakjes laden vanzelf op: 1 per interval, tot het maximum.
+// Gratis eieren laden vanzelf op: 1 per interval, tot het maximum.
 export function packState(user, now) {
   const premium = user.premium_until > now;
   const { interval, max } = premium ? RULES.premium : RULES.free;
@@ -44,6 +50,8 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
   const one = (sql, ...args) => db.prepare(sql).bind(...args).first();
   const all = async (sql, ...args) => (await db.prepare(sql).bind(...args).all()).results;
   const run = (sql, ...args) => db.prepare(sql).bind(...args).run();
+  const addCard = (userId, key) =>
+    db.prepare("INSERT INTO collection (user_id, card_id, count) VALUES (?, ?, 1) ON CONFLICT (user_id, card_id) DO UPDATE SET count = count + 1").bind(userId, key);
 
   async function currentUser(req) {
     const token = readCookie(req, "sid");
@@ -58,30 +66,60 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
     return `sid=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${RULES.sessionDays * 86400}${secure}`;
   }
 
-  async function countOf(userId, cardId) {
-    const row = await one("SELECT count FROM collection WHERE user_id = ? AND card_id = ?", userId, cardId);
-    return row ? row.count : 0;
+  async function spentLast30d(userId) {
+    const row = await one("SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE user_id = ? AND status IN ('paid', 'open', 'pending', 'authorized') AND created_at > ?", userId, now() - 30 * DAY);
+    return row.total;
   }
 
-  async function grantPremium(userId, paymentId) {
+  // Levert een betaald product precies één keer.
+  async function fulfil(paymentId) {
     const marked = await run("UPDATE payments SET status = 'paid' WHERE id = ? AND status != 'paid'", paymentId);
-    if (marked.meta.changes !== 1) return; // al verwerkt
-    const user = await one("SELECT premium_until FROM users WHERE id = ?", userId);
-    const from = Math.max(now(), user.premium_until);
-    await run("UPDATE users SET premium_until = ? WHERE id = ?", from + PASS.days * DAY, userId);
+    if (marked.meta.changes !== 1) return;
+    const pay = await one("SELECT user_id, product FROM payments WHERE id = ?", paymentId);
+    const product = PRODUCTS[pay.product];
+    if (product.eggs) {
+      await run("UPDATE users SET bought_eggs = bought_eggs + ? WHERE id = ?", product.eggs, pay.user_id);
+    } else {
+      const user = await one("SELECT premium_until FROM users WHERE id = ?", pay.user_id);
+      await run("UPDATE users SET premium_until = ? WHERE id = ?", Math.max(now(), user.premium_until) + product.days * DAY, pay.user_id);
+    }
   }
 
   async function checkMolliePayment(paymentId) {
     const row = await one("SELECT * FROM payments WHERE id = ?", paymentId);
     if (!row || row.status === "paid") return;
     const payment = await mollie.getPayment(paymentId);
-    if (payment.status === "paid" && payment.metadata?.userId === row.user_id) await grantPremium(row.user_id, paymentId);
+    if (payment.status === "paid" && payment.metadata?.userId === row.user_id) await fulfil(paymentId);
     else if (payment.status !== row.status) await run("UPDATE payments SET status = ? WHERE id = ? AND status != 'paid'", payment.status, paymentId);
+  }
+
+  // Haal `n` exemplaren van een kaart weg; verwijdert de rij als er 0 overblijven. Geeft true als het lukte.
+  async function takeCards(userId, key, n, expectedCount) {
+    const res =
+      n === expectedCount
+        ? await run("DELETE FROM collection WHERE user_id = ? AND card_id = ? AND count = ?", userId, key, expectedCount)
+        : await run("UPDATE collection SET count = count - ? WHERE user_id = ? AND card_id = ? AND count = ?", n, userId, key, expectedCount);
+    return res.meta.changes === 1;
   }
 
   const publicRoutes = {
     "GET /api/catalog": async () =>
-      json({ game: GAME_NAME, season: SEASON, groups: GROUPS.map(({ id, name, colors, title }) => ({ id, name, colors, title })), types: TYPES, rarities: RARITIES, variants: VARIANTS, kristalCap: KRISTAL_CAP, rarityPoints: RARITY_POINTS, cards: CARDS, odds: PUBLISHED_ODDS, rules: RULES, pass: PASS, demoMode }),
+      json({
+        game: GAME_NAME,
+        season: SEASON,
+        groups: GROUPS.map(({ id, name, colors, title }) => ({ id, name, colors, title })),
+        types: TYPES,
+        rarities: RARITIES,
+        variants: VARIANTS,
+        kristalCap: KRISTAL_CAP,
+        rarityPoints: RARITY_POINTS,
+        fossils: FOSSILS,
+        cards: CARDS,
+        odds: PUBLISHED_ODDS,
+        rules: RULES,
+        products: PRODUCTS,
+        demoMode,
+      }),
 
     "POST /api/register": async (req, body) => {
       const username = String(body.username || "").trim();
@@ -133,161 +171,138 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
       const pack = packState(user, now());
       const rows = await all("SELECT card_id, count FROM collection WHERE user_id = ?", user.id);
       const prints = await all("SELECT card_id, serial FROM prints WHERE user_id = ? ORDER BY created_at", user.id);
-      const tradesToday = (await one("SELECT COUNT(*) AS n FROM trades WHERE from_user = ? AND created_at > ?", user.id, now() - DAY)).n;
+      const spent = await spentLast30d(user.id);
       return json({
         username: user.username,
-        packs: { available: pack.credits, max: pack.max, nextAt: pack.nextAt },
+        packs: { available: pack.credits, max: pack.max, nextAt: pack.nextAt, bought: user.bought_eggs },
         premiumUntil: user.premium_until > now() ? user.premium_until : null,
         packsOpened: user.packs_opened,
+        fossils: user.fossils,
         collection: Object.fromEntries(rows.map((r) => [r.card_id, r.count])),
         prints: prints.map((p) => ({ cardId: p.card_id, serial: p.serial })),
         value: rows.reduce((sum, r) => sum + pointsOf(r.card_id) * r.count, 0),
-        tradesLeftToday: Math.max(0, RULES.tradesPerDay - tradesToday),
+        spendLeft: Math.max(0, RULES.spendCap30d - spent),
       });
     },
 
+    // Gratis eieren gaan eerst; daarna de gekochte.
     "POST /api/packs/open": async (_req, _body, user) => {
       const pack = packState(user, now());
-      if (pack.credits < 1) return fail(429, "Je hebt nu geen pakje. Kom straks terug!");
-      const nextAt = pack.credits >= pack.max ? now() : pack.at;
-      // Optimistisch slot: lukt alleen als niemand tegelijk een pakje opende.
-      const res = await run(
-        "UPDATE users SET pack_credits = ?, credits_at = ?, packs_opened = packs_opened + 1 WHERE id = ? AND pack_credits = ? AND credits_at = ?",
-        pack.credits - 1, nextAt, user.id, user.pack_credits, user.credits_at
-      );
+      let res;
+      if (pack.credits >= 1) {
+        const nextAt = pack.credits >= pack.max ? now() : pack.at;
+        // Optimistisch slot: lukt alleen als niemand tegelijk een ei opende.
+        res = await run(
+          "UPDATE users SET pack_credits = ?, credits_at = ?, packs_opened = packs_opened + 1 WHERE id = ? AND pack_credits = ? AND credits_at = ?",
+          pack.credits - 1, nextAt, user.id, user.pack_credits, user.credits_at
+        );
+      } else if (user.bought_eggs >= 1) {
+        res = await run("UPDATE users SET bought_eggs = bought_eggs - 1, packs_opened = packs_opened + 1 WHERE id = ? AND bought_eggs >= 1", user.id);
+      } else return fail(429, "Je hebt nu geen ei. Kom straks terug!");
       if (res.meta.changes !== 1) return fail(409, "Probeer het nog eens.");
-      const drawn = drawPack(random);
+
       const cards = [];
-      for (const key of drawn) {
+      for (const key of drawPack(random)) {
         const { card, variant } = parseKey(key);
         if (variant !== "kristal") {
           cards.push({ key });
           continue;
         }
         // Volgend serienummer, maar alleen als de oplage nog niet op is (atomair in één statement).
-        const res = await run(
+        const ins = await run(
           `INSERT INTO prints (card_id, serial, user_id, created_at)
            SELECT ?, COALESCE(MAX(serial), 0) + 1, ?, ? FROM prints WHERE card_id = ? HAVING COALESCE(MAX(serial), 0) < ?`,
           card.id, user.id, now(), card.id, KRISTAL_CAP
         );
-        if (res.meta.changes === 1) {
+        if (ins.meta.changes === 1) {
           const { serial } = await one("SELECT MAX(serial) AS serial FROM prints WHERE card_id = ? AND user_id = ?", card.id, user.id);
           cards.push({ key, serial });
         } else cards.push({ key: keyOf(card.id, "prisma") }); // uitverkocht: wordt Prisma
       }
-      await db.batch(
-        cards.map(({ key: id }) =>
-          db.prepare("INSERT INTO collection (user_id, card_id, count) VALUES (?, ?, 1) ON CONFLICT (user_id, card_id) DO UPDATE SET count = count + 1").bind(user.id, id)
-        )
-      );
+      await db.batch(cards.map(({ key }) => addCard(user.id, key)));
       return json({ cards });
     },
 
-    "GET /api/trades": async (_req, _body, user) => {
-      const rows = await all(
-        `SELECT t.id, t.give_card, t.want_card, t.status, t.created_at, f.username AS from_name, r.username AS to_name, t.from_user = ? AS mine
-         FROM trades t JOIN users f ON f.id = t.from_user JOIN users r ON r.id = t.to_user
-         WHERE (t.from_user = ? OR t.to_user = ?) AND (t.status = 'open' OR t.created_at > ?)
-         ORDER BY t.created_at DESC LIMIT 50`,
-        user.id, user.id, user.id, now() - 7 * DAY
-      );
-      return json({ trades: rows.map((r) => ({ ...r, mine: !!r.mine })) });
+    // Versteen kaarten tot fossielen.
+    "POST /api/fossils/dust": async (_req, body, user) => {
+      const parsed = parseKey(String(body.key || ""));
+      if (!parsed) return fail(400, "Onbekende kaart.");
+      const per = dustValue(parsed.card, parsed.variant);
+      if (per == null) return fail(400, "Oerkristal-kaarten zijn genummerd en kun je niet verstenen.");
+      const n = Math.floor(Number(body.count) || 1);
+      const owned = (await one("SELECT count FROM collection WHERE user_id = ? AND card_id = ?", user.id, body.key))?.count || 0;
+      if (n < 1 || n > owned) return fail(400, "Zoveel heb je er niet.");
+      if (!(await takeCards(user.id, body.key, n, owned))) return fail(409, "Probeer het nog eens.");
+      await run("UPDATE users SET fossils = fossils + ? WHERE id = ?", per * n, user.id);
+      return json({ gained: per * n });
     },
 
-    "POST /api/trades": async (_req, body, user) => {
-      const g = parseKey(body.give);
-      const w = parseKey(body.want);
-      if (!g || !w) return fail(400, "Onbekende kaart.");
-      if (!VARIANTS[g.variant].tradeable || !VARIANTS[w.variant].tradeable) return fail(400, "Kluiskaarten (Goudfolie, Prisma, Oerkristal) zijn niet ruilbaar.");
-      if (g.card.id === w.card.id && g.variant === w.variant) return fail(400, "Kies twee verschillende kaarten.");
-      if (g.card.rarity !== w.card.rarity || g.variant !== w.variant) return fail(400, "Je kunt alleen kaarten met dezelfde zeldzaamheid en afwerking ruilen.");
-      const give = { id: keyOf(g.card.id, g.variant) };
-      const want = { id: keyOf(w.card.id, w.variant) };
-      const to = await one("SELECT id FROM users WHERE username = ?", String(body.to || "").trim());
-      if (!to) return fail(404, "Die speler bestaat niet.");
-      if (to.id === user.id) return fail(400, "Je kunt niet met jezelf ruilen.");
-      if ((await countOf(user.id, give.id)) < 2) return fail(400, "Je kunt alleen dubbele kaarten ruilen.");
-      if ((await countOf(to.id, want.id)) < 2) return fail(400, "Die speler heeft deze kaart niet dubbel.");
-      const today = await one("SELECT COUNT(*) AS n FROM trades WHERE from_user = ? AND created_at > ?", user.id, now() - DAY);
-      if (today.n >= RULES.tradesPerDay) return fail(429, `Je kunt maximaal ${RULES.tradesPerDay} ruilvoorstellen per dag doen.`);
-      const open = await one("SELECT COUNT(*) AS n FROM trades WHERE from_user = ? AND status = 'open'", user.id);
-      if (open.n >= RULES.openTradesMax) return fail(429, "Je hebt al te veel open voorstellen.");
-      const id = crypto.randomUUID();
-      await run("INSERT INTO trades (id, from_user, to_user, give_card, want_card, created_at) VALUES (?, ?, ?, ?, ?, ?)", id, user.id, to.id, give.id, want.id, now());
-      return json({ id }, 201);
-    },
-
-    "POST /api/trades/:id/accept": async (_req, _body, user, tradeId) => {
-      const trade = await one("SELECT * FROM trades WHERE id = ? AND to_user = ? AND status = 'open'", tradeId, user.id);
-      if (!trade) return fail(404, "Dit voorstel bestaat niet (meer).");
-      if ((await countOf(trade.from_user, trade.give_card)) < 2 || (await countOf(user.id, trade.want_card)) < 2) {
-        await run("UPDATE trades SET status = 'failed' WHERE id = ?", trade.id);
-        return fail(409, "Een van jullie heeft de kaart niet meer dubbel.");
+    // Versteen alle dubbele kaarten in één keer (je houdt van elke versie er één).
+    "POST /api/fossils/dust-dupes": async (_req, _body, user) => {
+      const rows = await all("SELECT card_id, count FROM collection WHERE user_id = ? AND count > 1", user.id);
+      let gained = 0;
+      for (const r of rows) {
+        const p = parseKey(r.card_id);
+        const per = p && dustValue(p.card, p.variant);
+        if (per == null) continue;
+        if (await takeCards(user.id, r.card_id, r.count - 1, r.count)) gained += per * (r.count - 1);
       }
-      const claimed = await run("UPDATE trades SET status = 'accepted' WHERE id = ? AND status = 'open'", trade.id);
-      if (claimed.meta.changes !== 1) return fail(409, "Dit voorstel is al afgehandeld.");
-      const add = "INSERT INTO collection (user_id, card_id, count) VALUES (?, ?, 1) ON CONFLICT (user_id, card_id) DO UPDATE SET count = count + 1";
-      const take = "UPDATE collection SET count = count - 1 WHERE user_id = ? AND card_id = ?";
-      try {
-        // In één transactie; de CHECK (count >= 1) laat de hele ruil mislukken als iemand zijn laatste exemplaar zou verliezen.
-        await db.batch([
-          db.prepare(take).bind(trade.from_user, trade.give_card),
-          db.prepare(take).bind(user.id, trade.want_card),
-          db.prepare(add).bind(user.id, trade.give_card),
-          db.prepare(add).bind(trade.from_user, trade.want_card),
-        ]);
-      } catch {
-        await run("UPDATE trades SET status = 'failed' WHERE id = ?", trade.id);
-        return fail(409, "De ruil is mislukt: een kaart was niet meer dubbel.");
+      if (gained) await run("UPDATE users SET fossils = fossils + ? WHERE id = ?", gained, user.id);
+      return json({ gained });
+    },
+
+    // Maak een dino naar keuze van fossielen (alleen Normaal of Holo).
+    "POST /api/fossils/craft": async (_req, body, user) => {
+      const parsed = parseKey(String(body.key || ""));
+      if (!parsed) return fail(400, "Onbekende kaart.");
+      const cost = craftCost(parsed.card, parsed.variant);
+      if (cost == null) return fail(400, "Goudfolie, Prisma en Oerkristal vind je alleen in eieren.");
+      const res = await run("UPDATE users SET fossils = fossils - ? WHERE id = ? AND fossils >= ?", cost, user.id, cost);
+      if (res.meta.changes !== 1) return fail(400, `Je hebt ${cost} fossielen nodig.`);
+      await addCard(user.id, keyOf(parsed.card.id, parsed.variant)).run();
+      return json({ ok: true, cost });
+    },
+
+    "POST /api/checkout": async (req, body, user) => {
+      const productId = String(body.product || "");
+      const product = PRODUCTS[productId];
+      if (!product) return fail(400, "Onbekend product.");
+      if ((await spentLast30d(user.id)) + product.price > RULES.spendCap30d) {
+        return fail(429, `Je zit aan je limiet van €${RULES.spendCap30d / 100} per 30 dagen. Dat is er om je te beschermen.`);
       }
-      return json({ ok: true });
-    },
-
-    "POST /api/trades/:id/decline": async (_req, _body, user, tradeId) => {
-      const res = await run("UPDATE trades SET status = 'declined' WHERE id = ? AND to_user = ? AND status = 'open'", tradeId, user.id);
-      return res.meta.changes ? json({ ok: true }) : fail(404, "Dit voorstel bestaat niet (meer).");
-    },
-
-    "POST /api/trades/:id/cancel": async (_req, _body, user, tradeId) => {
-      const res = await run("UPDATE trades SET status = 'cancelled' WHERE id = ? AND from_user = ? AND status = 'open'", tradeId, user.id);
-      return res.meta.changes ? json({ ok: true }) : fail(404, "Dit voorstel bestaat niet (meer).");
-    },
-
-    "POST /api/pass/checkout": async (req, _body, user) => {
       if (demoMode) {
         const id = `demo_${randomHex(8)}`;
-        await run("INSERT INTO payments (id, user_id, status, created_at) VALUES (?, ?, 'open', ?)", id, user.id, now());
-        await grantPremium(user.id, id);
+        await run("INSERT INTO payments (id, user_id, product, amount, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)", id, user.id, productId, product.price, now());
+        await fulfil(id);
         return json({ url: "/#/winkel?betaald=1" });
       }
       const origin = new URL(req.url).origin;
       const payment = await mollie.createPayment({
-        amount: { currency: "EUR", value: centsToMollie(PASS.price) },
-        description: `${GAME_NAME} – ${PASS.label}`,
+        amount: { currency: "EUR", value: centsToMollie(product.price) },
+        description: `${GAME_NAME} – ${product.label}`,
         redirectUrl: `${origin}/#/winkel?betaald=1`,
         ...(origin.startsWith("https://") ? { webhookUrl: `${origin}/api/mollie/webhook` } : {}),
         locale: "nl_NL",
-        metadata: { userId: user.id },
+        metadata: { userId: user.id, product: productId },
       });
-      await run("INSERT INTO payments (id, user_id, status, created_at) VALUES (?, ?, 'open', ?)", payment.id, user.id, now());
+      await run("INSERT INTO payments (id, user_id, product, amount, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)", payment.id, user.id, productId, product.price, now());
       return json({ url: payment._links.checkout.href });
     },
 
     // Terug van Mollie: openstaande betalingen van deze gebruiker nacontroleren.
-    "POST /api/pass/verify": async (_req, _body, user) => {
+    "POST /api/checkout/verify": async (_req, _body, user) => {
       if (mollie) {
         const open = await all("SELECT id FROM payments WHERE user_id = ? AND status NOT IN ('paid', 'failed', 'canceled', 'expired') AND created_at > ?", user.id, now() - DAY);
         for (const p of open) await checkMolliePayment(p.id);
       }
-      const fresh = await one("SELECT premium_until FROM users WHERE id = ?", user.id);
-      return json({ premiumUntil: fresh.premium_until > now() ? fresh.premium_until : null });
+      const last = await one("SELECT product, status FROM payments WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", user.id);
+      return json({ last });
     },
   };
 
   return async function handle(req) {
     const { pathname } = new URL(req.url);
-    const tradeMatch = pathname.match(/^\/api\/trades\/([0-9a-f-]{36})\/(accept|decline|cancel)$/);
-    const key = `${req.method} ${tradeMatch ? `/api/trades/:id/${tradeMatch[2]}` : pathname}`;
+    const key = `${req.method} ${pathname}`;
     const isJson = (req.headers.get("Content-Type") || "").includes("application/json");
     const body = req.method === "POST" && isJson ? await req.json().catch(() => ({})) : {};
 
@@ -296,7 +311,7 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
       if (!userRoutes[key]) return fail(404, "Niet gevonden.");
       const user = await currentUser(req);
       if (!user) return fail(401, "Log eerst in.");
-      return await userRoutes[key](req, body, user, tradeMatch?.[1]);
+      return await userRoutes[key](req, body, user);
     } catch (err) {
       console.error(err);
       return fail(500, "Er ging iets mis. Probeer het nog eens.");

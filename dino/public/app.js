@@ -125,6 +125,37 @@ function celebrate(title, sub, cls) {
   setTimeout(() => fx.remove(), 2600);
 }
 
+const dustOf = (card, v) => (v in catalog.fossils.dustMult ? catalog.fossils.dust[card.rarity] * catalog.fossils.dustMult[v] : null);
+const craftOf = (card, v) => (v in catalog.fossils.craftMult ? catalog.fossils.craft[card.rarity] * catalog.fossils.craftMult[v] : null);
+
+// Knoppen om een kaart te verstenen of (Normaal/Holo) bij te maken.
+function fossilActions(card, variant, after) {
+  const key = keyOf(card.id, variant);
+  const owned = me.collection[key] || 0;
+  const per = dustOf(card, variant);
+  const box = el("div", { class: "factions" });
+  const act = async (path, body, msg) => {
+    try {
+      const res = await api(path, body);
+      await refreshMe();
+      toast(msg(res));
+      after();
+    } catch (ex) {
+      toast(ex.message);
+    }
+  };
+  if (per != null && owned) {
+    box.append(el("button", { class: "btn small ghost", onclick: () => act("/api/fossils/dust", { key, count: 1 }, (r) => `+${r.gained} 🦴`) }, `Versteen 1 (+${per} 🦴)`));
+    if (owned > 1) box.append(el("button", { class: "btn small ghost", onclick: () => act("/api/fossils/dust", { key, count: owned - 1 }, (r) => `+${r.gained} 🦴`) }, `Versteen ${owned - 1} dubbele (+${per * (owned - 1)} 🦴)`));
+  } else if (variant === "kristal") box.append(el("p", { class: "muted" }, "🔒 Oerkristal is genummerd en kun je niet verstenen."));
+  for (const v of ["normaal", "holo"]) {
+    const cost = craftOf(card, v);
+    box.append(el("button", { class: "btn small", disabled: me.fossils < cost, onclick: () => act("/api/fossils/craft", { key: keyOf(card.id, v) }, () => `${card.name} (${catalog.variants[v].label}) gemaakt!`) }, `Maak ${catalog.variants[v].label} (${cost} 🦴)`));
+  }
+  box.append(el("p", { class: "muted small" }, `Je hebt ${me.fossils.toLocaleString("nl-NL")} 🦴 fossielen.`));
+  return box;
+}
+
 function showDetail(card) {
   const group = groupOf(card.group);
   const variants = ownedVariants(card.id);
@@ -155,8 +186,15 @@ function showDetail(card) {
       ),
       serials.length ? el("p", {}, `Jouw serienummers: ${serials.map((s) => `#${String(s).padStart(2, "0")}`).join(", ")}`) : null,
       kristal,
-      el("p", { class: "muted" }, catalog.variants[current].tradeable ? "Deze afwerking is ruilbaar (als je hem dubbel hebt)." : "🔒 Kluiskaart: niet ruilbaar, alleen om te pronken."),
-      el("button", { class: "btn", onclick: close }, "Sluiten")
+      fossilActions(card, current, () => {
+        const left = ownedVariants(card.id);
+        if (!left.length) return close(), route();
+        if (!left.includes(current)) current = left[0];
+        variants.splice(0, variants.length, ...left);
+        render();
+        route(true);
+      }),
+      el("button", { class: "btn ghost", onclick: close }, "Sluiten")
     );
   };
   render();
@@ -164,6 +202,31 @@ function showDetail(card) {
   document.addEventListener("keydown", function esc(e) {
     if (e.key === "Escape") close(), document.removeEventListener("keydown", esc);
   });
+  document.body.append(overlay);
+}
+
+// Ontbrekende dino: laten zien wat het kost om hem te maken.
+function showCraft(card) {
+  const group = groupOf(card.group);
+  const close = () => overlay.remove();
+  const overlay = el(
+    "div",
+    { class: "overlay", onclick: (e) => e.target === overlay && close() },
+    el(
+      "div",
+      { class: "detail" },
+      el("div", { class: "big" }, cardEl(card, { missing: true })),
+      el(
+        "div",
+        {},
+        el("h2", {}, `Nog niet gevonden: #${card.number}`),
+        el("p", { class: "muted" }, `${catalog.rarities[card.rarity].label} · ${group.name}`),
+        el("p", {}, "Broed hem uit in een ei, of maak hem nu met fossielen."),
+        fossilActions(card, "normaal", () => (close(), route())),
+        el("button", { class: "btn ghost", onclick: close }, "Sluiten")
+      )
+    )
+  );
   document.body.append(overlay);
 }
 
@@ -218,7 +281,7 @@ function authView() {
       "div",
       {},
       el("h1", {}, "Vang ze allemaal"),
-      el("p", { class: "muted" }, `${catalog.cards.length} dino's uit ${catalog.groups.length} rijken. Broed elke dag gratis eieren uit en jaag op Holo, Goudfolie, Prisma en de genummerde Oerkristal-kaarten: daarvan bestaan er maar ${catalog.kristalCap} per dino in de héle wereld.`),
+      el("p", { class: "muted" }, `${catalog.cards.length} dino's uit ${catalog.groups.length} rijken. Broed elke dag gratis eieren uit, versteen dubbele kaarten tot fossielen en maak de dino die je mist. Jaag op Holo, Goudfolie, Prisma en de genummerde Oerkristal-kaarten: daarvan bestaan er maar ${catalog.kristalCap} per dino in de héle wereld.`),
       showcase
     ),
     form
@@ -228,8 +291,9 @@ function authView() {
 function packsView() {
   const wrap = el("div", { class: "packs-hero" });
   const render = () => {
-    const { available, max, nextAt } = me.packs;
-    const pack = el("div", { class: `pack${available ? "" : " empty"}`, role: "button", tabindex: 0, "aria-label": "Broed ei uit" }, el("span", {}, catalog.game, el("br"), `Seizoen ${catalog.season}`));
+    const { available, max, nextAt, bought } = me.packs;
+    const total = available + bought;
+    const pack = el("div", { class: `pack${total ? "" : " empty"}`, role: "button", tabindex: 0, "aria-label": "Broed ei uit" }, el("span", {}, catalog.game, el("br"), `Seizoen ${catalog.season}`));
     const countdown = el("p", { class: "muted" });
     const tickTimer = () => {
       if (!nextAt) return (countdown.textContent = `Je eieren zijn vol (${max}/${max}). Broed ze uit!`);
@@ -241,7 +305,7 @@ function packsView() {
     clearInterval(packsView.timer);
     packsView.timer = setInterval(tickTimer, 30000);
     const open = async () => {
-      if (!me.packs.available || pack.classList.contains("hatch")) return;
+      if (!(me.packs.available + me.packs.bought) || pack.classList.contains("hatch")) return;
       pack.classList.add("hatch");
       try {
         const before = { ...me.collection };
@@ -258,12 +322,13 @@ function packsView() {
     put(
       wrap,
       "replaceChildren",
-      el("h1", {}, available ? `${available} ${available > 1 ? "eieren" : "ei"} klaar` : "Even geduld…"),
+      el("h1", {}, total ? `${total} ${total > 1 ? "eieren" : "ei"} klaar` : "Even geduld…"),
+      bought ? el("p", { class: "muted" }, `${available} gratis + ${bought} gekocht. Gratis eieren worden eerst uitgebroed.`) : null,
       el("p", { class: "muted" }, "Tik op het ei om het uit te broeden. Gloeit een kaart al op de achterkant? Dan zit er iets bijzonders in…"),
       pack,
       countdown,
       el("p", { class: "muted" }, `Verzamelwaarde: `, el("b", {}, `${me.value.toLocaleString("nl-NL")} punten`)),
-      me.premiumUntil ? null : el("p", {}, el("a", { href: "#/winkel" }, "Met de Seizoenspas krijg je 2× zo snel een nieuw ei →"))
+      el("p", {}, el("a", { href: "#/winkel" }, total ? "Meer eieren of de Seizoenspas →" : "Niet wachten? Koop eieren →"))
     );
   };
 
@@ -316,7 +381,8 @@ function albumView() {
   const body = el("div");
   const matches = (c) => {
     if (filter === "alle") return true;
-    if (filter === "dubbel") return ["normaal", "holo"].some((v) => me.collection[keyOf(c.id, v)] > 1);
+    if (filter === "dubbel") return ownedVariants(c.id).some((v) => v !== "kristal" && me.collection[keyOf(c.id, v)] > 1);
+    if (filter === "mist") return !totalOwned(c.id);
     if (filter === "glans") return ownedVariants(c.id).some((v) => v !== "normaal");
     return c.rarity === filter;
   };
@@ -337,7 +403,11 @@ function albumView() {
             { class: "cards" },
             cards.map((c) => {
               const variants = ownedVariants(c.id);
-              if (!variants.length) return cardEl(c, { missing: true });
+              if (!variants.length) {
+                const node = cardEl(c, { missing: true });
+                node.addEventListener("click", () => showCraft(c));
+                return node;
+              }
               const best = variants[0];
               const node = cardEl(c, { variant: best, count: totalOwned(c.id), serial: best === "kristal" ? serialsOf(c.id)[0] : null, chips: variants });
               node.addEventListener("click", () => showDetail(c));
@@ -351,7 +421,7 @@ function albumView() {
   const filters = el(
     "div",
     { class: "filters" },
-    [["alle", "Alles"], ["glans", "✨ Holo en hoger"], ["dubbel", "Dubbel (ruilbaar)"], ...Object.entries(catalog.rarities).map(([k, v]) => [k, v.label])].map(([k, label]) => {
+    [["alle", "Alles"], ["glans", "✨ Holo en hoger"], ["dubbel", "Dubbel"], ["mist", "Mis ik nog"], ...Object.entries(catalog.rarities).map(([k, v]) => [k, v.label])].map(([k, label]) => {
       const b = el("button", { class: k === filter ? "on" : "", onclick: () => ((filter = k), filters.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b)), render()) }, label);
       return b;
     })
@@ -372,131 +442,137 @@ function albumView() {
   );
 }
 
-async function tradeView() {
-  const { trades } = await api("/api/trades");
-  const dupes = Object.entries(me.collection)
-    .filter(([key, n]) => n > 1 && catalog.variants[parseKey(key).variant].tradeable)
-    .map(([key]) => key);
-  let give = null;
-  let want = null;
-  const err = el("p", { class: "error", role: "alert" });
-  const wantRow = el("div", { class: "pick" });
-  const giveRow = el("div", { class: "pick" });
-
-  const pickCard = (key, sel, onclick, count = 0) => {
+function fossilsView() {
+  const dupes = Object.entries(me.collection).filter(([key, n]) => n > 1 && !key.endsWith(":kristal"));
+  const gain = dupes.reduce((sum, [key, n]) => {
     const { card, variant } = parseKey(key);
-    const node = cardEl(card, { variant, count });
-    node.classList.toggle("sel", sel);
-    node.addEventListener("click", onclick);
-    return node;
-  };
-  const renderPick = () => {
-    giveRow.replaceChildren(...(dupes.length ? dupes.map((k) => pickCard(k, give === k, () => ((give = k), (want = null), renderPick()), me.collection[k])) : [el("p", { class: "muted" }, "Je hebt nog geen dubbele ruilbare kaarten. Broed meer eieren uit!")]));
-    if (!give) return wantRow.replaceChildren(el("p", { class: "muted" }, "Kies eerst welke kaart je weggeeft."));
-    const g = parseKey(give);
-    wantRow.replaceChildren(
-      ...catalog.cards
-        .filter((c) => c.rarity === g.card.rarity && c.id !== g.card.id)
-        .map((c) => keyOf(c.id, g.variant))
-        .map((k) => pickCard(k, want === k, () => ((want = k), renderPick())))
-    );
-  };
-  renderPick();
-
-  const to = el("input", { placeholder: "Gebruikersnaam van je vriend", maxlength: 20 });
-  const send = el("button", { class: "btn" }, "Stuur ruilvoorstel");
-  send.addEventListener("click", async () => {
-    err.textContent = "";
-    if (!give || !want || !to.value.trim()) return (err.textContent = "Kies twee kaarten en vul een gebruikersnaam in.");
-    try {
-      await api("/api/trades", { to: to.value.trim(), give, want });
-      toast("Ruilvoorstel verstuurd!");
-      await refreshMe();
-      route();
-    } catch (ex) {
-      err.textContent = ex.message;
-    }
+    return sum + dustOf(card, variant) * (n - 1);
+  }, 0);
+  const btn = el("button", { class: "btn", disabled: !gain }, gain ? `Versteen alle dubbele (+${gain.toLocaleString("nl-NL")} 🦴)` : "Geen dubbele kaarten");
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    const { gained } = await api("/api/fossils/dust-dupes", {});
+    await refreshMe();
+    toast(`+${gained.toLocaleString("nl-NL")} 🦴 fossielen`);
+    route();
   });
-
-  const act = (id, action, msg) => async () => {
-    try {
-      await api(`/api/trades/${id}/${action}`, {});
-      toast(msg);
-      await refreshMe();
-      route();
-    } catch (ex) {
-      toast(ex.message);
-      route();
-    }
-  };
-  const STATUS = { open: "Open", accepted: "Geruild ✓", declined: "Afgewezen", cancelled: "Ingetrokken", failed: "Mislukt" };
-  const mini = (key) => {
-    const { card, variant } = parseKey(key);
-    return el("div", { class: "mini" }, cardEl(card, { variant }));
-  };
-  const list = trades.length
-    ? trades.map((t) =>
-        el(
-          "div",
-          { class: "trade" },
-          el("div", {}, el("b", {}, t.mine ? `Jij → ${t.to_name}` : `${t.from_name} → jou`), el("div", { class: "muted" }, STATUS[t.status])),
-          mini(t.mine ? t.give_card : t.want_card),
-          el("span", { class: "arrow" }, "⇄"),
-          mini(t.mine ? t.want_card : t.give_card),
-          t.status === "open" && !t.mine ? [el("button", { class: "btn small", onclick: act(t.id, "accept", "Geruild!") }, "Accepteren"), el("button", { class: "btn small ghost", onclick: act(t.id, "decline", "Afgewezen") }, "Afwijzen")] : null,
-          t.status === "open" && t.mine ? el("button", { class: "btn small ghost", onclick: act(t.id, "cancel", "Ingetrokken") }, "Intrekken") : null
+  const missing = catalog.cards.filter((c) => !totalOwned(c.id));
+  const row = (title, list) =>
+    list.length
+      ? el(
+          "section",
+          { class: "club-row" },
+          el("h3", {}, title),
+          el(
+            "div",
+            { class: "cards" },
+            list.map((c) => {
+              const node = cardEl(c, { missing: true });
+              node.addEventListener("click", () => showCraft(c));
+              return node;
+            })
+          )
         )
-      )
-    : [el("p", { class: "muted" }, "Nog geen ruilvoorstellen.")];
-
+      : null;
+  const f = catalog.fossils;
+  const t = (obj) => Object.keys(catalog.rarities).map((r) => el("td", {}, String(obj[r])));
   return el(
     "div",
     {},
-    el("h1", {}, "Ruilen"),
-    el("p", { class: "muted" }, `Ruil dubbele kaarten met vrienden: kaart tegen kaart, zelfde zeldzaamheid én afwerking (Normaal of Holo). Kluiskaarten zijn niet ruilbaar. Je kunt vandaag nog ${me.tradesLeftToday} voorstellen doen. Jouw gebruikersnaam: `, el("b", {}, me.username)),
-    el("div", { class: "panel" }, el("h2", {}, "Voorstellen"), list),
+    el("h1", {}, "Fossielen"),
+    el("p", { class: "muted" }, "Versteen kaarten die je niet nodig hebt tot 🦴 fossielen en maak daarmee precies de dino die je zoekt. Fossielen gebruik je alleen hiervoor: je kunt er geen eieren mee kopen, ze niet overdragen en niet uitbetalen."),
+    el(
+      "div",
+      { class: "panel fossil-bank" },
+      el("div", {}, el("div", { class: "muted" }, "Jouw fossielen"), el("div", { class: "price" }, `${me.fossils.toLocaleString("nl-NL")} 🦴`)),
+      el("div", {}, btn, el("p", { class: "muted small" }, "Je houdt van elke versie altijd één exemplaar. Oerkristal wordt nooit versteend."))
+    ),
     el("br"),
-    el("div", { class: "panel" }, el("h2", {}, "Nieuw voorstel"), el("label", {}, "1. Welke dubbele kaart geef je weg?"), giveRow, el("label", {}, "2. Welke kaart wil je terug?"), wantRow, el("label", {}, "3. Met wie?"), to, err, send)
+    el(
+      "div",
+      { class: "panel" },
+      el("h2", {}, "Wat levert het op, wat kost het?"),
+      el(
+        "table",
+        { class: "odds" },
+        el("tr", {}, el("th", {}), Object.values(catalog.rarities).map((r) => el("th", {}, r.label))),
+        el("tr", {}, el("td", {}, "Verstenen (Normaal)"), t(f.dust)),
+        el("tr", {}, el("td", {}, "Maken (Normaal)"), t(f.craft)),
+        el("tr", {}, el("td", {}, "Maken (Holo)"), t(Object.fromEntries(Object.entries(f.craft).map(([k, v]) => [k, v * f.craftMult.holo]))))
+      ),
+      el("p", { class: "muted" }, `Verstenen levert extra op voor Holo (×${f.dustMult.holo}), Goudfolie (×${f.dustMult.goud}) en Prisma (×${f.dustMult.prisma}). Goudfolie, Prisma en Oerkristal kun je niet maken: die vind je alleen in eieren.`)
+    ),
+    el("br"),
+    row(`Mis ik nog (${missing.length}). Tik om te maken`, missing)
   );
 }
 
 async function shopView(params) {
   if (params.get("betaald")) {
-    const { premiumUntil } = await api("/api/pass/verify", {});
+    const { last } = await api("/api/checkout/verify", {});
     await refreshMe();
-    toast(premiumUntil ? "Seizoenspas actief! 🎉" : "Betaling nog niet binnen. Probeer het zo opnieuw.");
+    toast(last?.status === "paid" ? `${catalog.products[last.product].label}: gelukt! 🎉` : "Betaling nog niet binnen. Probeer het zo opnieuw.");
     history.replaceState(null, "", "#/winkel");
   }
-  const { pass, rules } = catalog;
-  const buy = el("button", { class: "btn" }, me.premiumUntil ? "Verleng met 30 dagen" : "Koop de Seizoenspas");
-  buy.addEventListener("click", async () => {
-    buy.disabled = true;
+  const { products, rules } = catalog;
+  const euro = (c) => `€${(c / 100).toFixed(2).replace(".", ",")}`;
+  const buy = (id) => async (e) => {
+    e.target.disabled = true;
     try {
-      const { url } = await api("/api/pass/checkout", {});
+      const { url } = await api("/api/checkout", { product: id });
       if (url.startsWith("/")) {
         location.hash = url.slice(1);
         route();
       } else location.href = url;
     } catch (ex) {
       toast(ex.message);
-      buy.disabled = false;
+      e.target.disabled = false;
     }
-  });
+  };
+  const eggs = Object.entries(products).filter(([, p]) => p.eggs);
   return el(
     "div",
-    { class: "grid2" },
+    {},
+    el("h1", {}, "Winkel"),
+    el(
+      "div",
+      { class: "shop" },
+      eggs.map(([id, p]) =>
+        el(
+          "div",
+          { class: `panel product${p.tag ? " tagged" : ""}` },
+          p.tag ? el("span", { class: "ptag" }, p.tag) : null,
+          el("div", { class: "eggs" }, "🥚".repeat(Math.min(p.eggs, 5))),
+          el("h2", {}, p.label),
+          el("div", { class: "price" }, euro(p.price)),
+          el("p", { class: "muted" }, `${euro(Math.round(p.price / p.eggs))} per ei`),
+          el("button", { class: "btn", onclick: buy(id) }, "Kopen")
+        )
+      ),
+      el(
+        "div",
+        { class: "panel product" },
+        el("div", { class: "eggs" }, "⏱️"),
+        el("h2", {}, products.pass.label),
+        el("div", { class: "price" }, euro(products.pass.price)),
+        el("ul", { class: "ticks" }, el("li", {}, `Elke ${rules.premium.interval / 3600000} uur een gratis ei`), el("li", {}, `Spaar tot ${rules.premium.max} gratis eieren op`)),
+        me.premiumUntil ? el("p", {}, `Actief tot ${new Date(me.premiumUntil).toLocaleDateString("nl-NL")}`) : null,
+        el("button", { class: "btn", onclick: buy("pass") }, me.premiumUntil ? "Verlengen" : "Kopen")
+      )
+    ),
     el(
       "div",
       { class: "panel" },
-      el("h1", {}, "Seizoenspas"),
-      el("div", { class: "price" }, `€${(pass.price / 100).toFixed(2).replace(".", ",")}`),
-      el("p", { class: "muted" }, "30 dagen · eenmalig, geen abonnement"),
-      el("ul", { class: "ticks" }, el("li", {}, `Elke ${rules.premium.interval / 3600000} uur een gratis ei (normaal ${rules.free.interval / 3600000} uur)`), el("li", {}, `Spaar tot ${rules.premium.max} eieren op (normaal ${rules.free.max})`), el("li", {}, "Je steunt de makers van DinoRijk")),
-      me.premiumUntil ? el("p", {}, `Actief tot ${new Date(me.premiumUntil).toLocaleDateString("nl-NL")}`) : null,
-      buy,
+      el("h2", {}, "Eerlijk spel"),
+      el(
+        "ul",
+        {},
+        el("li", {}, "Gekochte eieren hebben precies dezelfde kansen als gratis eieren. ", el("a", { href: "#/regels" }, "Bekijk de kansen.")),
+        el("li", {}, "Kaarten en fossielen hebben geen geldwaarde: je kunt ze niet verkopen, ruilen of uitbetalen, en met fossielen koop je geen eieren."),
+        el("li", {}, `Uitgavegrens: maximaal ${euro(rules.spendCap30d)} per 30 dagen. Je kunt nu nog ${euro(me.spendLeft)} uitgeven.`)
+      ),
       catalog.demoMode ? el("p", { class: "muted" }, "Testmodus: er wordt niets afgeschreven.") : el("p", { class: "muted" }, "Betalen met iDEAL, Bancontact of creditcard via Mollie.")
-    ),
-    el("div", {}, el("h2", {}, "Eerlijk spel"), el("p", { class: "muted" }, "Iedereen krijgt dezelfde kansen, met of zonder pas. De pas geeft je alleen sneller eieren. Kaarten kun je nooit voor geld kopen of verkopen."), el("a", { href: "#/regels" }, "Bekijk de kansen per kaart →"))
+    )
   );
 }
 
@@ -519,10 +595,10 @@ function rulesView() {
     el(
       "table",
       { class: "odds" },
-      el("tr", {}, el("th", {}, "Afwerking"), el("th", {}, "Kans"), el("th", {}, "Waarde ×"), el("th", {}, "Ruilbaar")),
+      el("tr", {}, el("th", {}, "Afwerking"), el("th", {}, "Kans"), el("th", {}, "Waarde ×"), el("th", {}, "Te maken met fossielen")),
       VARIANT_ORDER.slice()
         .reverse()
-        .map((k) => el("tr", {}, el("td", {}, catalog.variants[k].label), el("td", {}, k === "normaal" ? pct(afwerking[k]) : oneIn(afwerking[k])), el("td", {}, `×${catalog.variants[k].mult}`), el("td", {}, catalog.variants[k].tradeable ? "Ja" : "🔒 Nee")))
+        .map((k) => el("tr", {}, el("td", {}, catalog.variants[k].label), el("td", {}, k === "normaal" ? pct(afwerking[k]) : oneIn(afwerking[k])), el("td", {}, `×${catalog.variants[k].mult}`), el("td", {}, k in catalog.fossils.craftMult ? "Ja" : "Nee, alleen in eieren")))
     ),
     el("p", { class: "muted" }, `Oerkristal-kaarten zijn genummerd: van elke dino bestaan er wereldwijd maximaal ${catalog.kristalCap}. Is de oplage op, dan wordt een Oerkristal-trekking een Prisma. Verzamelwaarde is een puntentelling voor de lol en heeft geen geldwaarde.`),
     el("h2", {}, "Regels"),
@@ -531,8 +607,10 @@ function rulesView() {
       {},
       el("li", {}, "Alleen voor 18 jaar en ouder."),
       el("li", {}, "Kaarten zijn virtueel, hebben geen geldwaarde en kunnen niet voor geld worden gekocht, verkocht of uitbetaald."),
-      el("li", {}, `Ruilen kan alleen met dubbele Normaal- of Holo-kaarten: kaart tegen kaart, zelfde zeldzaamheid en afwerking, maximaal ${catalog.rules.tradesPerDay} voorstellen per dag.`),
-      el("li", {}, "Handel in accounts of kaarten voor geld buiten de site is verboden en leidt tot blokkering."),
+      el("li", {}, "Gekochte en gratis eieren hebben exact dezelfde kansen."),
+      el("li", {}, "Kaarten kun je niet ruilen of verkopen. Je kunt ze verstenen tot fossielen en daarmee een dino naar keuze maken (Normaal of Holo). Met fossielen koop je geen eieren."),
+      el("li", {}, `Uitgavegrens: maximaal €${catalog.rules.spendCap30d / 100} per 30 dagen per account.`),
+      el("li", {}, "Handel in accounts voor geld is verboden en leidt tot blokkering."),
       el("li", {}, "De soorten zijn echte prehistorische dieren; namen, rijken, krachten en tekeningen zijn verzonnen. De weetjes op de kaarten kloppen wel!")
     )
   );
@@ -546,19 +624,13 @@ async function refreshMe() {
     me = null;
   }
   nav.hidden = !me;
-  const badge = document.getElementById("tradeBadge");
-  if (me) {
-    api("/api/trades")
-      .then(({ trades }) => {
-        const n = trades.filter((t) => t.status === "open" && !t.mine).length;
-        badge.hidden = !n;
-        badge.textContent = n;
-      })
-      .catch(() => {});
-  }
+  const bank = document.getElementById("bank");
+  if (me) bank.textContent = `${me.fossils.toLocaleString("nl-NL")} 🦴`;
 }
 
-async function route() {
+// keepOverlay = true: pagina op de achtergrond verversen terwijl een detailvenster open blijft.
+async function route(keepOverlay) {
+  if (keepOverlay !== true) document.querySelectorAll(".overlay").forEach((o) => o.remove());
   const [path, query] = (location.hash.slice(1) || "/").split("?");
   const params = new URLSearchParams(query);
   clearInterval(packsView.timer);
@@ -569,7 +641,7 @@ async function route() {
     if (path === "/regels") node = rulesView();
     else if (!me) node = authView();
     else if (path === "/album") node = albumView();
-    else if (path === "/ruilen") node = await tradeView();
+    else if (path === "/fossielen") node = fossilsView();
     else if (path === "/winkel") node = await shopView(params);
     else node = packsView();
     view.replaceChildren(node);

@@ -8,26 +8,44 @@ Een virtueel verzamelspel met **eigen dinokaarten**: 96 dino's in 6 rijken (Vulk
 - **Zeldzaamheden:** Gewoon, Zeldzaam, Episch en Legendarisch, met openbare kansen op `#/regels`.
 - **Afwerkingen**, los van de zeldzaamheid gekozen per kaart:
 
-  | Afwerking | Kans per kaart | Waarde × | Ruilbaar |
+  | Afwerking | Kans per kaart | Waarde × | Te maken met fossielen |
   |---|---|---|---|
   | Normaal | ±90% | ×1 | ja |
   | Holo (regenboogfolie die meebeweegt) | 1 op 13 | ×3 | ja |
-  | Goudfolie (goud frame en folie) | 1 op 67 | ×10 | 🔒 nee |
-  | Prisma (full-art, draaiende regenboog) | 1 op 333 | ×40 | 🔒 nee |
-  | **Oerkristal** (genummerd, bijv. 07/25) | 1 op 5.000 | ×250 | 🔒 nee |
+  | Goudfolie (goud frame en folie) | 1 op 67 | ×10 | nee, alleen in eieren |
+  | Prisma (full-art, draaiende regenboog) | 1 op 333 | ×40 | nee, alleen in eieren |
+  | **Oerkristal** (genummerd, bijv. 07/25) | 1 op 5.000 | ×250 | nee, alleen in eieren |
 
   Van elke dino bestaan wereldwijd maximaal **25 Oerkristal**-exemplaren, en de oplage telt live af. Is hij op, dan wordt de trekking een Prisma. Een Legendarische Oerkristal is dus 1 op een half miljoen kaarten.
 - **Verzamelwaarde** in punten (zeldzaamheid × afwerking), voor de lol. Dit heeft geen geldwaarde.
 - **Spanning bij het openen:** een kaart met een zeldzame afwerking gloeit al op de achterkant, en bij Goudfolie, Prisma, Oerkristal en Legendarisch volgt een viering op het scherm.
 - **Kaarten kantelen** mee met je muis of vinger, en de glans volgt.
-- **Ruilen met vrienden:** alleen dubbele Normaal- of Holo-kaarten, kaart tegen kaart, zelfde zeldzaamheid en afwerking, maximaal 5 voorstellen per dag.
-- **Seizoenspas** (€4,99 voor 30 dagen) via **Mollie**: elke 6 uur een ei en tot 4 opsparen. De kansen veranderen niet.
+- **Eieren kopen** via **Mollie**: 5 voor €3,99, 12 voor €7,99 of 30 voor €17,99. Gekochte eieren hebben exact dezelfde kansen als gratis eieren, en gratis eieren worden eerst uitgebroed.
+- **Seizoenspas** (€4,99 voor 30 dagen): elke 6 uur een gratis ei en tot 4 opsparen.
+- **Uitgavegrens** van €100 per 30 dagen per account.
+- **Fossielen (Hearthstone-model):** versteen kaarten tot 🦴 fossielen (los of "alle dubbele" in één keer) en maak daarmee de dino die je mist, als Normaal of Holo:
 
-Gebouwd op dezelfde motor als `../voetbal` (De Polder Liga) en draait ook gratis op **Cloudflare Workers + D1**.
+  | | Gewoon | Zeldzaam | Episch | Legendarisch |
+  |---|---|---|---|---|
+  | Verstenen (Normaal) | 5 | 20 | 100 | 400 |
+  | Maken (Normaal) | 40 | 100 | 400 | 1.600 |
+  | Maken (Holo) | 160 | 400 | 1.600 | 6.400 |
+
+  Verstenen levert ×4 op voor Holo, ×10 voor Goudfolie en ×40 voor Prisma. Oerkristal kun je niet verstenen.
+- **Geen ruilen, geen verkopen, geen uitbetalen.** Met fossielen koop je **nooit** eieren.
+
+Draait gratis op **Cloudflare Workers + D1**.
 
 ## Kansspelwet
 
-Kaarten kun je nooit kopen, verkopen of laten uitbetalen. Ruilen is beperkt, de waardevolste afwerkingen zijn kluiskaarten die niet van eigenaar wisselen, en de pas koopt geen kaarten of betere kansen. Zo hebben kaarten geen geldwaarde. Dit is een ontwerp om het risico te beperken, geen juridisch advies: **laat het vóór de lancering checken door een kansspeljurist.**
+Dit volgt het model van o.a. Hearthstone: je koopt eieren met geld, maar wat eruit komt kan nooit van eigenaar wisselen of terug naar geld. Concreet:
+
+- Kaarten kun je niet ruilen, verkopen of laten uitbetalen. Er is geen marktplaats.
+- Fossielen zijn alleen te gebruiken om kaarten te maken. Ze zijn niet over te dragen, niet in te wisselen voor eieren en niet uit te betalen. Zo kun je "winst" nooit opnieuw inzetten.
+- Openbare kansen, en gekochte eieren hebben dezelfde kansen als gratis eieren.
+- 18+, en een uitgavegrens van €100 per 30 dagen.
+
+Volgens de Kansspelautoriteit is vooral overdraagbaarheid (en daarmee geldwaarde) bepalend voor of een loot box een kansspel is. Dit is een ontwerp om het risico te beperken, geen juridisch advies: **laat het vóór de lancering checken door een kansspeljurist.**
 
 ## Gratis online zetten
 

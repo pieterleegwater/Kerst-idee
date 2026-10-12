@@ -94,51 +94,10 @@ test("packState spaart niet boven het maximum", () => {
   assert.equal(s.nextAt, null);
 });
 
-test("ruilen: alleen dubbelen, zelfde zeldzaamheid, en atomisch", async () => {
-  const { db, client } = setup();
-  const a = client();
-  const b = client();
-  await register(a, "anna");
-  await register(b, "bram");
-  const [x, y, z] = BY_RARITY.goud;
-  const zilver = BY_RARITY.zilver[0];
-  await give(db, "anna", x.id, 2);
-  await give(db, "bram", y.id, 2);
-  await give(db, "bram", zilver.id, 2);
-
-  assert.equal((await a("POST", "/api/trades", { to: "bram", give: x.id, want: zilver.id })).status, 400); // andere zeldzaamheid
-  assert.equal((await a("POST", "/api/trades", { to: "bram", give: x.id, want: z.id })).status, 400); // bram heeft z niet dubbel
-  assert.equal((await a("POST", "/api/trades", { to: "anna", give: x.id, want: y.id })).status, 400); // met jezelf
-
-  const { body } = await a("POST", "/api/trades", { to: "bram", give: x.id, want: y.id });
-  assert.equal((await a("POST", `/api/trades/${body.id}/accept`)).status, 404); // alleen ontvanger
-  assert.equal((await b("POST", `/api/trades/${body.id}/accept`)).status, 200);
-  assert.equal((await b("POST", `/api/trades/${body.id}/accept`)).status, 404); // niet twee keer
-
-  const annaCol = (await a("GET", "/api/me")).body.collection;
-  const bramCol = (await b("GET", "/api/me")).body.collection;
-  assert.deepEqual([annaCol[x.id], annaCol[y.id]], [1, 1]);
-  assert.deepEqual([bramCol[y.id], bramCol[x.id]], [1, 1]);
-});
-
-test("ruil mislukt als een kaart intussen niet meer dubbel is", async () => {
-  const { db, client } = setup();
-  const a = client();
-  const b = client();
-  await register(a, "anna");
-  await register(b, "bram");
-  const [x, y] = BY_RARITY.brons;
-  await give(db, "anna", x.id, 2);
-  await give(db, "bram", y.id, 2);
-  const { body } = await a("POST", "/api/trades", { to: "bram", give: x.id, want: y.id });
-  await give(db, "anna", x.id, 1);
-  assert.equal((await b("POST", `/api/trades/${body.id}/accept`)).status, 409);
-  assert.equal((await b("GET", "/api/me")).body.collection[y.id], 2);
-});
-
-test("seizoenspas via Mollie: pas actief na 'paid', extra pakjes", async () => {
+function fakeMollie() {
   const payments = new Map();
-  const mollie = {
+  return {
+    payments,
     async createPayment(body) {
       const id = `tr_${payments.size + 1}`;
       payments.set(id, { id, status: "open", ...body });
@@ -148,21 +107,84 @@ test("seizoenspas via Mollie: pas actief na 'paid', extra pakjes", async () => {
       return payments.get(id);
     },
   };
+}
+const webhook = (call, id) => call("POST", "/api/mollie/webhook", `id=${id}`, { "Content-Type": "application/x-www-form-urlencoded" });
+
+test("eieren kopen via Mollie: pas na 'paid', één keer geleverd, gratis eieren eerst", async () => {
+  const mollie = fakeMollie();
   const { client } = setup({ mollie });
   const a = client();
   await register(a, "kim");
-  const { body } = await a("POST", "/api/pass/checkout");
+  const { body } = await a("POST", "/api/checkout", { product: "eieren5" });
   assert.match(body.url, /mollie\.com\/checkout\/tr_1/);
-  assert.deepEqual(payments.get("tr_1").amount, { currency: "EUR", value: "4.99" });
-  assert.equal((await a("POST", "/api/pass/verify")).body.premiumUntil, null);
+  assert.deepEqual(mollie.payments.get("tr_1").amount, { currency: "EUR", value: "3.99" });
+  assert.equal((await a("GET", "/api/me")).body.packs.bought, 0);
 
-  payments.get("tr_1").status = "paid";
-  await a("POST", "/api/mollie/webhook", "id=tr_1", { "Content-Type": "application/x-www-form-urlencoded" });
-  await a("POST", "/api/mollie/webhook", "id=tr_1", { "Content-Type": "application/x-www-form-urlencoded" }); // dubbel = geen extra dagen
+  mollie.payments.get("tr_1").status = "paid";
+  await webhook(a, "tr_1");
+  await webhook(a, "tr_1"); // dubbele melding levert niet nog eens
+  assert.equal((await a("GET", "/api/me")).body.packs.bought, 5);
+
+  for (let i = 0; i < 7; i++) assert.equal((await a("POST", "/api/packs/open")).status, 200);
+  const me = (await a("GET", "/api/me")).body;
+  assert.deepEqual([me.packs.available, me.packs.bought], [0, 0]);
+  assert.equal((await a("POST", "/api/packs/open")).status, 429);
+});
+
+test("seizoenspas via Mollie geeft snellere gratis eieren", async () => {
+  const mollie = fakeMollie();
+  const { client } = setup({ mollie });
+  const a = client();
+  await register(a, "pas");
+  await a("POST", "/api/checkout", { product: "pass" });
+  mollie.payments.get("tr_1").status = "paid";
+  await a("POST", "/api/checkout/verify", {});
   const me = (await a("GET", "/api/me")).body;
   assert.ok(me.premiumUntil);
-  assert.equal(me.premiumUntil - (await a("GET", "/api/me")).body.premiumUntil, 0);
   assert.equal(me.packs.max, RULES.premium.max);
+});
+
+test("uitgavegrens van €100 per 30 dagen", async () => {
+  const { client, tick } = setup();
+  const a = client();
+  await register(a, "grens");
+  for (let i = 0; i < 5; i++) assert.equal((await a("POST", "/api/checkout", { product: "eieren30" })).status, 200); // 5 × 17,99
+  assert.equal((await a("POST", "/api/checkout", { product: "eieren30" })).status, 429);
+  assert.equal((await a("POST", "/api/checkout", { product: "eieren5" })).status, 200); // 89,95 + 3,99 past nog
+  tick(31 * 24 * HOUR);
+  await a("POST", "/api/login", { username: "grens", password: "geheim123" }); // sessie was verlopen
+  assert.equal((await a("POST", "/api/checkout", { product: "eieren30" })).status, 200);
+});
+
+test("verstenen en maken: fossielen, geen Oerkristal, geen eieren van fossielen", async () => {
+  const { db, client } = setup();
+  const a = client();
+  await register(a, "fossiel");
+  const [x, y] = BY_RARITY.zilver;
+  await give(db, "fossiel", x.id, 3);
+  await give(db, "fossiel", `${x.id}:holo`, 2);
+  await give(db, "fossiel", `${y.id}:kristal`, 1);
+
+  assert.equal((await a("POST", "/api/fossils/dust", { key: `${y.id}:kristal` })).status, 400);
+  assert.equal((await a("POST", "/api/fossils/dust", { key: x.id, count: 4 })).status, 400);
+  assert.equal((await a("POST", "/api/fossils/dust", { key: x.id, count: 1 })).body.gained, 20);
+  assert.equal((await a("POST", "/api/fossils/dust-dupes", {})).body.gained, 20 + 80); // 1 normaal + 1 holo
+  let me = (await a("GET", "/api/me")).body;
+  assert.equal(me.fossils, 120);
+  assert.deepEqual([me.collection[x.id], me.collection[`${x.id}:holo`], me.collection[`${y.id}:kristal`]], [1, 1, 1]);
+
+  assert.equal((await a("POST", "/api/fossils/dust", { key: x.id, count: 1 })).status, 200); // laatste mag ook
+  assert.equal((await a("GET", "/api/me")).body.collection[x.id], undefined);
+
+  assert.equal((await a("POST", "/api/fossils/craft", { key: `${y.id}:prisma` })).status, 400);
+  assert.equal((await a("POST", "/api/fossils/craft", { key: `${y.id}:holo` })).status, 400); // 400 nodig, 140 in bezit
+  assert.equal((await a("POST", "/api/fossils/craft", { key: y.id })).status, 200); // 100
+  me = (await a("GET", "/api/me")).body;
+  assert.equal(me.fossils, 40);
+  assert.equal(me.collection[y.id], 1);
+
+  // Er bestaat geen manier om fossielen in te wisselen voor eieren, of om te ruilen.
+  for (const path of ["/api/fossils/buy-eggs", "/api/trades"]) assert.equal((await a("POST", path, {})).status, 404);
 });
 
 test("Oerkristal: genummerd, maximaal KRISTAL_CAP per dino, daarna Prisma", async () => {
@@ -183,24 +205,4 @@ test("Oerkristal: genummerd, maximaal KRISTAL_CAP per dino, daarna Prisma", asyn
   assert.equal(me.prints.length, KRISTAL_CAP);
   assert.ok(me.value > 0);
   assert.equal((await a("GET", "/api/kristal")).body.found[parseKey(keys[0]).card.id], KRISTAL_CAP);
-});
-
-test("kluiskaarten zijn niet ruilbaar; holo alleen tegen holo", async () => {
-  const { db, client } = setup();
-  const a = client();
-  const b = client();
-  await register(a, "anna");
-  await register(b, "bram");
-  const [x, y] = BY_RARITY.zilver;
-  await give(db, "anna", `${x.id}:prisma`, 3);
-  await give(db, "bram", `${y.id}:prisma`, 3);
-  assert.equal((await a("POST", "/api/trades", { to: "bram", give: `${x.id}:prisma`, want: `${y.id}:prisma` })).status, 400);
-  await give(db, "anna", `${x.id}:holo`, 2);
-  await give(db, "bram", y.id, 2);
-  assert.equal((await a("POST", "/api/trades", { to: "bram", give: `${x.id}:holo`, want: y.id })).status, 400);
-  await give(db, "bram", `${y.id}:holo`, 2);
-  const { status, body } = await a("POST", "/api/trades", { to: "bram", give: `${x.id}:holo`, want: `${y.id}:holo` });
-  assert.equal(status, 201);
-  assert.equal((await b("POST", `/api/trades/${body.id}/accept`)).status, 200);
-  assert.equal((await a("GET", "/api/me")).body.collection[`${y.id}:holo`], 1);
 });

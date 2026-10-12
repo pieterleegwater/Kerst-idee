@@ -142,13 +142,12 @@ export function drawPack(random) {
 
 // ---------- Afwerkingen ----------
 // Elke kaart kan in een zeldzamere afwerking vallen, los van de zeldzaamheid van de dino zelf.
-// Kluiskaarten (Goudfolie, Prisma, Oerkristal) zijn niet ruilbaar: zo ontstaat er geen handel in.
 export const VARIANTS = {
-  normaal: { label: "Normaal", odds: 0, mult: 1, tradeable: true },
-  holo: { label: "Holo", odds: 0.08, mult: 3, tradeable: true },
-  goud: { label: "Goudfolie", odds: 0.015, mult: 10, tradeable: false },
-  prisma: { label: "Prisma", odds: 0.003, mult: 40, tradeable: false },
-  kristal: { label: "Oerkristal", odds: 0.0002, mult: 250, tradeable: false },
+  normaal: { label: "Normaal", odds: 0, mult: 1 },
+  holo: { label: "Holo", odds: 0.08, mult: 3 },
+  goud: { label: "Goudfolie", odds: 0.015, mult: 10 },
+  prisma: { label: "Prisma", odds: 0.003, mult: 40 },
+  kristal: { label: "Oerkristal", odds: 0.0002, mult: 250 },
 };
 export const VARIANT_ORDER = ["kristal", "prisma", "goud", "holo", "normaal"];
 VARIANTS.normaal.odds = 1 - VARIANT_ORDER.slice(0, 4).reduce((s, k) => s + VARIANTS[k].odds, 0);
@@ -193,3 +192,15 @@ export function cryptoRandom() {
   crypto.getRandomValues(buf);
   return buf[0] / 4294967296;
 }
+
+// ---------- Fossielen ----------
+// Verstenen: kaart weg, fossielen erbij. Maken: fossielen weg, dino naar keuze erbij.
+// Fossielen zijn alleen hiervoor te gebruiken: niet voor eieren, niet over te dragen, niet uit te betalen.
+export const FOSSILS = {
+  dust: { brons: 5, zilver: 20, goud: 100, icoon: 400 },
+  dustMult: { normaal: 1, holo: 4, goud: 10, prisma: 40 }, // Oerkristal kun je niet verstenen
+  craft: { brons: 40, zilver: 100, goud: 400, icoon: 1600 },
+  craftMult: { normaal: 1, holo: 4 }, // Goudfolie, Prisma en Oerkristal zijn alleen te vinden in eieren
+};
+export const dustValue = (card, variant) => (variant in FOSSILS.dustMult ? FOSSILS.dust[card.rarity] * FOSSILS.dustMult[variant] : null);
+export const craftCost = (card, variant) => (variant in FOSSILS.craftMult ? FOSSILS.craft[card.rarity] * FOSSILS.craftMult[variant] : null);

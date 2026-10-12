@@ -1,5 +1,5 @@
 -- CHECK-constraints bewaken de spelregels in de database zelf:
--- je kunt nooit je laatste exemplaar wegruilen en nooit onder 0 pakjes komen.
+-- nooit onder 0 eieren of fossielen, en een kaart met 0 exemplaren bestaat niet (wordt verwijderd).
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
@@ -10,7 +10,9 @@ CREATE TABLE IF NOT EXISTS users (
   pack_credits INTEGER NOT NULL DEFAULT 2 CHECK (pack_credits >= 0),
   credits_at INTEGER NOT NULL,
   premium_until INTEGER NOT NULL DEFAULT 0,
-  packs_opened INTEGER NOT NULL DEFAULT 0
+  packs_opened INTEGER NOT NULL DEFAULT 0,
+  bought_eggs INTEGER NOT NULL DEFAULT 0 CHECK (bought_eggs >= 0),
+  fossils INTEGER NOT NULL DEFAULT 0 CHECK (fossils >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -26,24 +28,15 @@ CREATE TABLE IF NOT EXISTS collection (
   PRIMARY KEY (user_id, card_id)
 );
 
-CREATE TABLE IF NOT EXISTS trades (
-  id TEXT PRIMARY KEY,
-  from_user TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  to_user TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  give_card TEXT NOT NULL,
-  want_card TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'open',
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS trades_to ON trades (to_user, status);
-CREATE INDEX IF NOT EXISTS trades_from ON trades (from_user, created_at);
-
 CREATE TABLE IF NOT EXISTS payments (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  product TEXT NOT NULL,
+  amount INTEGER NOT NULL,
   status TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS payments_user ON payments (user_id, created_at);
 
 -- Genummerde Oerkristal-kaarten: per dino maximaal KRISTAL_CAP exemplaren wereldwijd.
 CREATE TABLE IF NOT EXISTS prints (
