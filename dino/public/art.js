@@ -14,6 +14,18 @@ function imageDino(card) {
   return `<image href="/img/dino/${card.art}.png" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="${fit}"/>`;
 }
 
+// Legendarische kaarten met een volledige scène (public/img/dino/legend-<naam>.jpg).
+// Op gewone kaarten is het beeld breder dan hoog: kies per dino welk deel zichtbaar is (0 = boven, 1 = onder).
+const LEGEND_FOCUS = { rex: 0.45, titan: 0.25, brachio: 0.08, mosa: 0.55, quetzal: 0.4, raptor: 0.5 };
+function legendImage(card, variant) {
+  const href = `/img/dino/legend-${card.art}.jpg`;
+  if (variant === "prisma" || variant === "kristal") {
+    return `<image href="${href}" x="-4" y="-20" width="128" height="128" preserveAspectRatio="xMidYMid slice"/>`;
+  }
+  const y = -30 * (LEGEND_FOCUS[card.art] ?? 0.5); // vierkant plaatje van 120 hoog in een vak van 90 hoog
+  return `<image href="${href}" x="0" y="${y}" width="120" height="120" preserveAspectRatio="xMidYMid slice"/>`;
+}
+
 const BODY = {
   vuur: ["#e85d04", "#c1121f", "#f48c06"],
   ijs: ["#90e0ef", "#bde0fe", "#5e9ed6"],
@@ -221,7 +233,7 @@ export function dinoSvg(card, group, { variant = "normaal", silhouette = false }
   const back = silhouette
     ? `<rect width="120" height="90" fill="#120c07"/><circle cx="60" cy="48" r="38" fill="${group.colors[0]}" opacity=".18"/>`
     : legendScene
-      ? `<image href="/img/dino/legend-${card.art}.png" x="-4" y="-20" width="128" height="128" preserveAspectRatio="xMidYMid slice"/>`
+      ? legendImage(card, variant)
       : scene(card.group, group.colors, r, id, { variant, legendary: card.rarity === "icoon" });
   const ground = flying || swimming || (card.rarity === "icoon" && IMAGES.has(`legend-${card.art}`)) ? "" : `<ellipse cx="58" cy="81" rx="42" ry="5" fill="#000" opacity=".4"/>`;
   const dino = legendScene ? "" : IMAGES.has(card.art) ? imageDino(card) : DRAW[card.type](`url(#bd${id})`, BELLY[card.group], accent, eyeColor, r, card.species);

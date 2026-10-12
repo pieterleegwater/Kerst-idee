@@ -53,4 +53,4 @@ centered, isolated on a plain flat light grey background, no scenery, no text, n
   - Stormheerser **Quetzal**: *"…flying through a thunderstorm with lightning"*
   - Maanvorst **Raptor**: *"…on a rock under a giant full moon at night"*
 
-  Sla die op als `legend-rex.png`, `legend-titan.png`, `legend-brachio.png`, `legend-mosa.png`, `legend-quetzal.png` en `legend-raptor.png`.
+  Ze staan in de site als `public/img/dino/legend-<naam>.jpg` (rex, titan, brachio, mosa, quetzal, raptor). Welk deel van de scène op een gewone kaart zichtbaar is, stel je in met `LEGEND_FOCUS` in `public/art.js`.
