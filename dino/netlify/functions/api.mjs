@@ -3,10 +3,12 @@ import { createApp } from "../../src/app.js";
 import { pgDatabase } from "../../src/pg.js";
 import { createMollie } from "../../src/mollie.js";
 import { supabasePool, ensureSchema, MissingDatabaseUrl } from "../../src/supabase.js";
+import { statusResponse } from "../../src/status.js";
 
 let app;
 
 export default async (request) => {
+  if (new URL(request.url).pathname === "/api/status") return statusResponse();
   try {
     await ensureSchema();
   } catch (err) {
