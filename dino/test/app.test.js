@@ -2,13 +2,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createApp, RULES, packState } from "../src/app.js";
 import { CARDS, BY_RARITY, drawPack, PACK_SIZE, parseKey, KRISTAL_CAP } from "../src/cards.js";
-import { testDb } from "./d1.js";
+import { testDb, testPgDb } from "./d1.js";
+
+const makeDb = process.env.DB === "pg" ? testPgDb : testDb;
 
 const BASE = "https://dinorijk.example";
 const HOUR = 3600 * 1000;
 
 function setup({ mollie = null, random } = {}) {
-  const db = testDb();
+  const db = makeDb();
   let clock = Date.UTC(2026, 10, 1);
   const app = createApp({ db, mollie, now: () => clock, ...(random ? { random } : {}) });
   const client = () => {

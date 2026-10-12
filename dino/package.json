@@ -10,10 +10,16 @@
     "deploy": "wrangler deploy",
     "db:init": "wrangler d1 execute dinorijk --remote --file=schema.sql",
     "db:init:local": "wrangler d1 execute dinorijk --local --file=schema.sql",
-    "test": "node --no-warnings --test test/*.test.js"
+    "test": "node --no-warnings --test test/*.test.js && DB=pg node --no-warnings --test test/*.test.js"
   },
-  "engines": { "node": ">=22.13" },
+  "engines": {
+    "node": ">=22.13"
+  },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.2.17",
     "wrangler": "^4.149.0"
+  },
+  "dependencies": {
+    "@netlify/database": "^2.0.1"
   }
 }

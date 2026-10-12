@@ -38,3 +38,21 @@ export function testDb() {
     },
   };
 }
+
+// Postgres-variant (PGlite, Postgres in WebAssembly) met dezelfde migratie als Netlify Database.
+import { PGlite } from "@electric-sql/pglite";
+import { pgDatabase } from "../src/pg.js";
+
+export function testPgDb() {
+  const ready = (async () => {
+    const pg = new PGlite();
+    await pg.exec(readFileSync(new URL("../netlify/database/migrations/20261012120000_init.sql", import.meta.url), "utf8"));
+    return pg;
+  })();
+  const query = async (text, params) => {
+    const r = await (await ready).query(text, params);
+    return { rows: r.rows, rowCount: r.affectedRows ?? 0, fields: r.fields };
+  };
+  // PGlite heeft één verbinding; BEGIN/COMMIT werken daar gewoon op.
+  return pgDatabase({ query, connect: async () => ({ query, release() {} }) });
+}

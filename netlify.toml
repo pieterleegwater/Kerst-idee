@@ -1,0 +1,11 @@
+# Netlify bouwt DinoRijk uit de map dino/.
+[build]
+  base = "dino"
+  publish = "public"
+  command = "echo 'Geen build nodig: statische site + functies'"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[functions]
+  directory = "netlify/functions"

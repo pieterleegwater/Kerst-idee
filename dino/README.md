@@ -34,7 +34,7 @@ Een virtueel verzamelspel met **eigen dinokaarten**: 96 dino's in 6 rijken (Vulk
   Verstenen levert ×4 op voor Holo, ×10 voor Goudfolie en ×40 voor Prisma. Oerkristal kun je niet verstenen.
 - **Geen ruilen, geen verkopen, geen uitbetalen.** Met fossielen koop je **nooit** eieren.
 
-Draait gratis op **Cloudflare Workers + D1**.
+Draait op **Netlify** (Functions + Netlify Database, Postgres) of op **Cloudflare Workers + D1**. Dezelfde code werkt op beide.
 
 ## Kansspelwet
 
@@ -47,7 +47,22 @@ Dit volgt het model van o.a. Hearthstone: je koopt eieren met geld, maar wat eru
 
 Volgens de Kansspelautoriteit is vooral overdraagbaarheid (en daarmee geldwaarde) bepalend voor of een loot box een kansspel is. Dit is een ontwerp om het risico te beperken, geen juridisch advies: **laat het vóór de lancering checken door een kansspeljurist.**
 
-## Gratis online zetten
+## Online zetten op Netlify
+
+De repo bevat `netlify.toml` (in de hoofdmap), dus Netlify weet zelf dat het om de map `dino/` gaat.
+
+1. Open je project op app.netlify.com → **Project configuration → Build & deploy → Continuous deployment → Link repository**. Kies GitHub → `kerst-idee` → branch `claude/kerst-familiespel`.
+2. Ga naar **Project configuration → Environment variables** en voeg `MOLLIE_API_KEY` toe (eerst `test_...`, later `live_...`).
+   ⚠️ Zonder deze sleutel draait de site in testmodus en zijn eieren kopen gratis. Zet hem erin voordat je de link deelt.
+3. Klik **Deploys → Trigger deploy**. Netlify maakt de database automatisch aan (door `@netlify/database` in `package.json`) en voert `netlify/database/migrations/` uit.
+
+Bestanden voor Netlify:
+- `netlify/functions/api.mjs`: alle `/api/*`-verzoeken
+- `netlify/functions/cleanup.mjs`: ruimt elke dag verlopen sessies op
+- `netlify/database/migrations/`: tabellen (Postgres)
+- `src/pg.js`: koppelt Postgres aan dezelfde app-code als Cloudflare
+
+## Online zetten op Cloudflare (alternatief)
 
 ```bash
 npm install
@@ -63,7 +78,7 @@ npm run deploy
 ```bash
 npm run db:init:local
 npm run dev     # http://localhost:8787 (demo-modus zonder Mollie)
-npm test
+npm test          # draait alle tests op SQLite én op Postgres (PGlite)
 ```
 
 ## De set aanpassen

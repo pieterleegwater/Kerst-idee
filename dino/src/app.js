@@ -51,7 +51,7 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
   const all = async (sql, ...args) => (await db.prepare(sql).bind(...args).all()).results;
   const run = (sql, ...args) => db.prepare(sql).bind(...args).run();
   const addCard = (userId, key) =>
-    db.prepare("INSERT INTO collection (user_id, card_id, count) VALUES (?, ?, 1) ON CONFLICT (user_id, card_id) DO UPDATE SET count = count + 1").bind(userId, key);
+    db.prepare("INSERT INTO collection (user_id, card_id, count) VALUES (?, ?, 1) ON CONFLICT (user_id, card_id) DO UPDATE SET count = collection.count + 1").bind(userId, key);
 
   async function currentUser(req) {
     const token = readCookie(req, "sid");
@@ -127,7 +127,7 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
       if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) return fail(400, "Gebruikersnaam: 3–20 letters, cijfers of _.");
       if (password.length < 8) return fail(400, "Wachtwoord moet minstens 8 tekens zijn.");
       if (body.adult !== true) return fail(400, "Je moet 18 jaar of ouder zijn.");
-      if (await one("SELECT 1 FROM users WHERE username = ?", username)) return fail(409, "Die gebruikersnaam is al bezet.");
+      if (await one("SELECT 1 FROM users WHERE lower(username) = lower(?)", username)) return fail(409, "Die gebruikersnaam is al bezet.");
       const { hash, salt } = await hashPassword(password);
       const id = crypto.randomUUID();
       await run(
@@ -138,7 +138,7 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
     },
 
     "POST /api/login": async (req, body) => {
-      const user = await one("SELECT * FROM users WHERE username = ?", String(body.username || "").trim());
+      const user = await one("SELECT * FROM users WHERE lower(username) = lower(?)", String(body.username || "").trim());
       if (!user || !(await verifyPassword(String(body.password || ""), user.pass_salt, user.pass_hash))) {
         return fail(401, "Gebruikersnaam of wachtwoord klopt niet.");
       }
@@ -208,12 +208,13 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
           cards.push({ key });
           continue;
         }
-        // Volgend serienummer, maar alleen als de oplage nog niet op is (atomair in één statement).
+        // Volgend serienummer, maar alleen als de oplage nog niet op is (in één statement).
+        // Pakken twee spelers tegelijk hetzelfde nummer, dan faalt er één op de primary key: die krijgt Prisma.
         const ins = await run(
           `INSERT INTO prints (card_id, serial, user_id, created_at)
-           SELECT ?, COALESCE(MAX(serial), 0) + 1, ?, ? FROM prints WHERE card_id = ? HAVING COALESCE(MAX(serial), 0) < ?`,
+           SELECT CAST(? AS TEXT), COALESCE(MAX(serial), 0) + 1, CAST(? AS TEXT), CAST(? AS BIGINT) FROM prints WHERE card_id = ? HAVING COALESCE(MAX(serial), 0) < ?`,
           card.id, user.id, now(), card.id, KRISTAL_CAP
-        );
+        ).catch(() => ({ meta: { changes: 0 } }));
         if (ins.meta.changes === 1) {
           const { serial } = await one("SELECT MAX(serial) AS serial FROM prints WHERE card_id = ? AND user_id = ?", card.id, user.id);
           cards.push({ key, serial });
