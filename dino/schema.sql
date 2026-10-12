@@ -68,3 +68,16 @@ CREATE TABLE IF NOT EXISTS registrations (
 );
 CREATE INDEX IF NOT EXISTS registrations_ip ON registrations (ip_hash, created_at);
 CREATE INDEX IF NOT EXISTS registrations_time ON registrations (created_at);
+
+-- Eén rij per naam; een upsert hierop laat gelijktijdige verzoeken netjes op elkaar wachten.
+CREATE TABLE IF NOT EXISTS locks (
+  name TEXT PRIMARY KEY,
+  at INTEGER NOT NULL DEFAULT 0
+);
+
+-- Mislukte inlogpogingen (alleen hashes), om wachtwoorden raden af te remmen.
+CREATE TABLE IF NOT EXISTS login_fails (
+  key_hash TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS login_fails_key ON login_fails (key_hash, created_at);

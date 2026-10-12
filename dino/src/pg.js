@@ -38,13 +38,15 @@ export function pgDatabase(source) {
   });
   return {
     prepare: (sql) => statement(sql),
-    // Net als D1: alles of niets, in één transactie.
+    // Net als D1: alles of niets, in één transactie; geeft per statement het aantal gewijzigde rijen terug.
     async batch(statements) {
       const client = await getPool().connect();
       try {
         await client.query("BEGIN");
-        for (const s of statements) await exec(client, s.sql, s.args);
+        const results = [];
+        for (const s of statements) results.push({ meta: { changes: (await exec(client, s.sql, s.args)).rowCount ?? 0 } });
         await client.query("COMMIT");
+        return results;
       } catch (err) {
         await client.query("ROLLBACK").catch(() => {});
         throw err;

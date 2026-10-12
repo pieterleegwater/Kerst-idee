@@ -524,6 +524,11 @@ function forgotView() {
   const input = el("input", { type: "email", name: "email", required: true, autocomplete: "email", placeholder: "jij@voorbeeld.nl" });
   const btn = el("button", { class: "btn", type: "submit" }, "Stuur resetlink");
   const form = el("form", { class: "panel narrow" }, el("h1", {}, "Wachtwoord vergeten"), el("p", { class: "muted" }, "Vul het e-mailadres van je account in. We sturen je een link om een nieuw wachtwoord in te stellen."), el("label", {}, "E-mailadres"), input, btn, msg, el("p", { class: "small" }, el("a", { href: "#/" }, "← Terug naar inloggen")));
+  // Zolang er geen mail verstuurd kan worden (RESEND_API_KEY niet ingesteld): eerlijk zeggen in plaats van niets sturen.
+  if (catalog.mail === false) {
+    input.disabled = btn.disabled = true;
+    msg.textContent = "Wachtwoord herstellen per e-mail is binnenkort beschikbaar. Weet je je gebruikersnaam of e-mailadres nog? Probeer dan opnieuw in te loggen.";
+  }
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     btn.disabled = true;
@@ -616,10 +621,15 @@ function fossilsView() {
   const btn = el("button", { class: "btn", disabled: !gain }, gain ? `Versteen alle dubbele (+${gain.toLocaleString("nl-NL")} 🦴)` : "Geen dubbele kaarten");
   btn.addEventListener("click", async () => {
     btn.disabled = true;
-    const { gained } = await api("/api/fossils/dust-dupes", {});
-    await refreshMe();
-    toast(`+${gained.toLocaleString("nl-NL")} 🦴 fossielen`);
-    route();
+    try {
+      const { gained } = await api("/api/fossils/dust-dupes", {});
+      await refreshMe();
+      toast(`+${gained.toLocaleString("nl-NL")} 🦴 fossielen`);
+      route();
+    } catch (ex) {
+      toast(ex.message);
+      btn.disabled = false;
+    }
   });
   const missing = catalog.cards.filter((c) => !totalOwned(c.id));
   const row = (title, list) =>
@@ -813,6 +823,10 @@ async function route(keepOverlay) {
     else if (path === "/winkel") node = await shopView(params);
     else node = packsView();
     view.replaceChildren(node);
+    // Ander scherm (of net in-/uitgelogd): bovenaan beginnen, anders land je op de telefoon halverwege de pagina.
+    const screen = `${path}|${!!me}`;
+    if (screen !== route.screen) scrollTo(0, 0);
+    route.screen = screen;
   } catch (ex) {
     if (ex.status === 401) {
       me = null;

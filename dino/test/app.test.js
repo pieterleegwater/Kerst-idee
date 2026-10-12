@@ -228,7 +228,7 @@ test("accounts: maximaal 3 per netwerk per dag, bots met het verborgen veld gewe
   assert.equal((await reg("vier")).status, 201);
 });
 
-test("accounts: maximaal 60 per uur voor de hele site", async () => {
+test("accounts: maximum per uur voor de hele site", async () => {
   const { client } = setup();
   for (let i = 0; i < RULES.accountsPerHourTotal; i++) {
     const r = await client()("POST", "/api/register", { username: `speler${i}`, email: `speler${i}@test.nl`, password: "geheim123", adult: true }, { "x-nf-client-connection-ip": `192.0.2.${i}` });
@@ -312,4 +312,95 @@ test("ranglijst: hoogste verzamelwaarde bovenaan, eigen plek erbij", async () =>
   const { body: opened } = await c("POST", "/api/packs/open");
   const gained = opened.cards.reduce((n, k) => n + pointsOf(k.key), 0);
   assert.equal((await c("GET", "/api/leaderboard")).body.mine.score, before - 10 + gained);
+});
+
+test("gelijktijdig: bestedingslimiet, registraties per netwerk en dezelfde naam houden stand", async () => {
+  const { client } = setup();
+  const a = client();
+  await register(a, "haast");
+  const buys = await Promise.all(Array.from({ length: 12 }, () => a("POST", "/api/checkout", { product: "eieren30" })));
+  assert.equal(buys.filter((r) => r.status === 200).length, 5); // 5 × 17,99 past onder €100
+  assert.equal((await a("GET", "/api/me")).body.packs.bought, 150);
+
+  const ip = { "x-nf-client-connection-ip": "198.51.100.7" };
+  const regs = await Promise.all(Array.from({ length: 8 }, (_, i) => client()("POST", "/api/register", { username: `snel${i}`, email: `snel${i}@test.nl`, password: "geheim123", adult: true }, ip)));
+  assert.equal(regs.filter((r) => r.status === 201).length, RULES.accountsPerIpPerDay);
+
+  const same = await Promise.all(Array.from({ length: 4 }, (_, i) => client()("POST", "/api/register", { username: "dubbel", email: `dubbel${i}@test.nl`, password: "geheim123", adult: true })));
+  assert.deepEqual(same.map((r) => r.status).sort(), [201, 409, 409, 409]);
+});
+
+test("rare invoer geeft nette 4xx in plaats van een serverfout", async () => {
+  const { client } = setup();
+  const a = client();
+  await register(a, "raar");
+  const cases = [
+    ["/api/login", "null"], ["/api/register", "[1,2]"], ["/api/checkout", { product: "constructor" }], ["/api/checkout", { product: "__proto__" }],
+    ["/api/fossils/craft", { key: "vuur-1:constructor" }], ["/api/fossils/dust", { key: ["vuur-1"] }], ["/api/fossils/dust", { key: "vuur-1", count: 1.5 }],
+    ["/api/login", { login: ["a"], password: {} }], ["/api/account/email", { email: ["a@b.nl"] }],
+  ];
+  for (const [path, body] of cases) {
+    const r = await a("POST", path, body);
+    assert.ok(r.status >= 400 && r.status < 500, `${path} ${JSON.stringify(body)} → ${r.status}`);
+  }
+  // text/plain kan een andere website ongevraagd sturen: dat telt niet als JSON.
+  const r = await client()("POST", "/api/register", JSON.stringify({ username: "csrf", email: "csrf@test.nl", password: "geheim123", adult: true }), { "Content-Type": "text/plain; application/json" });
+  assert.equal(r.status, 400);
+});
+
+test("wachtwoord raden wordt na 10 pogingen per kwartier afgeremd", async () => {
+  const { client, tick } = setup();
+  await register(client(), "slot");
+  const b = client();
+  for (let i = 0; i < RULES.loginFailsPerAccount; i++) assert.equal((await b("POST", "/api/login", { login: "slot", password: `fout${i}xxx` })).status, 401);
+  assert.equal((await b("POST", "/api/login", { login: "slot", password: "geheim123" })).status, 429);
+  tick(16 * 60 * 1000);
+  assert.equal((await b("POST", "/api/login", { login: "SLOT", password: "geheim123" })).status, 200);
+});
+
+test("Mollie: mislukte aanvraag geeft limiet terug, webhook vindt reservering, 2× pas = 60 dagen", async () => {
+  const mollie = fakeMollie();
+  const { client, db } = setup({ mollie });
+  const a = client();
+  await register(a, "mol");
+  const create = mollie.createPayment;
+  mollie.createPayment = async () => { throw new Error("Mollie 503"); };
+  assert.equal((await a("POST", "/api/checkout", { product: "eieren30" })).status, 500);
+  assert.equal((await a("GET", "/api/me")).body.spendLeft, RULES.spendCap30d); // reservering is weer vrijgegeven
+  mollie.createPayment = create;
+
+  // Twee passen tegelijk betaald: allebei geleverd.
+  await Promise.all([a("POST", "/api/checkout", { product: "pass" }), a("POST", "/api/checkout", { product: "pass" })]);
+  for (const p of mollie.payments.values()) p.status = "paid";
+  await Promise.all([webhook(a, "tr_1"), webhook(a, "tr_2"), a("POST", "/api/checkout/verify", {})]);
+  const days = ((await a("GET", "/api/me")).body.premiumUntil - (await db.prepare("SELECT MIN(created_at) AS t FROM payments").first()).t) / (24 * HOUR);
+  assert.equal(Math.round(days), 60);
+
+  // Mollie-id niet opgeslagen (bijv. time-out na het aanmaken): de webhook koppelt hem alsnog via de metadata.
+  await a("POST", "/api/checkout", { product: "eieren5" });
+  await db.prepare("UPDATE payments SET id = ?, status = 'reserving' WHERE id = 'tr_3'").bind(mollie.payments.get("tr_3").metadata.ref).run();
+  mollie.payments.get("tr_3").status = "paid";
+  await webhook(a, "tr_3");
+  assert.equal((await a("GET", "/api/me")).body.packs.bought, 5);
+
+  // Betaald maar van iemand anders: niet geleverd en ook niet op 'paid' gezet.
+  const b = client();
+  await register(b, "ander");
+  await b("POST", "/api/checkout", { product: "eieren5" });
+  mollie.payments.get("tr_4").status = "paid";
+  mollie.payments.get("tr_4").metadata.userId = "iemand-anders";
+  await webhook(b, "tr_4");
+  assert.equal((await b("GET", "/api/me")).body.packs.bought, 0);
+  assert.notEqual((await db.prepare("SELECT status FROM payments WHERE id = 'tr_4'").first()).status, "paid");
+});
+
+test("wachtwoord reset maakt andere resetlinks ongeldig", async () => {
+  const { client, mails } = setup();
+  const a = client();
+  await register(a, "twee");
+  await a("POST", "/api/password/forgot", { email: "twee@test.nl" });
+  await a("POST", "/api/password/forgot", { email: "twee@test.nl" });
+  const [t1, t2] = mails.map((m) => m.text.match(/token=([a-f0-9]+)/)[1]);
+  assert.equal((await a("POST", "/api/password/reset", { token: t2, password: "nieuwwachtwoord" })).status, 200);
+  assert.equal((await a("POST", "/api/password/reset", { token: t1, password: "hackerwachtwoord" })).status, 400);
 });

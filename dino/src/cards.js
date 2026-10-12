@@ -173,7 +173,7 @@ export const keyOf = (cardId, variant = "normaal") => (variant === "normaal" ? c
 export function parseKey(key) {
   const [id, variant = "normaal"] = String(key).split(":");
   const card = CARD_BY_ID.get(id);
-  return card && VARIANTS[variant] ? { card, variant } : null;
+  return card && Object.hasOwn(VARIANTS, variant) ? { card, variant } : null;
 }
 export const pointsOf = (key) => {
   const p = parseKey(key);
@@ -203,5 +203,5 @@ export const FOSSILS = {
   craft: { brons: 40, zilver: 100, goud: 400, icoon: 1600 },
   craftMult: { normaal: 1, holo: 4 }, // Goudfolie, Prisma en Oerkristal zijn alleen te vinden in eieren
 };
-export const dustValue = (card, variant) => (variant in FOSSILS.dustMult ? FOSSILS.dust[card.rarity] * FOSSILS.dustMult[variant] : null);
-export const craftCost = (card, variant) => (variant in FOSSILS.craftMult ? FOSSILS.craft[card.rarity] * FOSSILS.craftMult[variant] : null);
+export const dustValue = (card, variant) => (Object.hasOwn(FOSSILS.dustMult, variant) ? FOSSILS.dust[card.rarity] * FOSSILS.dustMult[variant] : null);
+export const craftCost = (card, variant) => (Object.hasOwn(FOSSILS.craftMult, variant) ? FOSSILS.craft[card.rarity] * FOSSILS.craftMult[variant] : null);

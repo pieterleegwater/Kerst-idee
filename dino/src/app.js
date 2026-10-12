@@ -12,7 +12,10 @@ export const RULES = {
   sessionDays: 30,
   // Tegen massaal accounts aanmaken (bijvoorbeeld voor gratis eieren):
   accountsPerIpPerDay: 3,
-  accountsPerHourTotal: 60,
+  accountsPerHourTotal: 300,
+  // Tegen wachtwoorden raden: maximaal zoveel mislukte pogingen per kwartier.
+  loginFailsPerAccount: 10,
+  loginFailsPerIp: 30,
   resetLinkMinutes: 60,
   resetsPerHour: 3,
   leaderboardSize: 50,
@@ -62,6 +65,9 @@ const hashIp = (ip, salt) => sha256(`${salt}:${ip}`);
 const normEmail = (e) => String(e || "").trim().toLowerCase();
 const validEmail = (e) => e.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);
 const scoreOf = (keys) => keys.reduce((sum, k) => sum + pointsOf(k), 0);
+const isUniqueViolation = (err) => err?.code === "23505" || /UNIQUE constraint/i.test(err?.message || "");
+// Betalingen die meetellen voor de bestedingslimiet ('reserving' = net aangevraagd, Mollie nog bezig).
+const COUNTED = "('paid', 'open', 'pending', 'authorized', 'reserving')";
 
 function readCookie(req, name) {
   const match = (req.headers.get("Cookie") || "").match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
@@ -74,6 +80,10 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
   const one = (sql, ...args) => db.prepare(sql).bind(...args).first();
   const all = async (sql, ...args) => (await db.prepare(sql).bind(...args).all()).results;
   const run = (sql, ...args) => db.prepare(sql).bind(...args).run();
+  // Laat gelijktijdige verzoeken met dezelfde naam op elkaar wachten: als eerste statement in een batch
+  // houdt dit in Postgres een rijslot vast tot de transactie klaar is (SQLite/D1 doet batches al na elkaar).
+  const lock = (name) => db.prepare("INSERT INTO locks (name, at) VALUES (?, ?) ON CONFLICT (name) DO UPDATE SET at = excluded.at").bind(name, now());
+  let dummyHash; // zodat inloggen met een onbekende naam even lang duurt als met een bestaande
   const addCard = (userId, key) =>
     db.prepare("INSERT INTO collection (user_id, card_id, count) VALUES (?, ?, 1) ON CONFLICT (user_id, card_id) DO UPDATE SET count = collection.count + 1").bind(userId, key);
 
@@ -91,30 +101,38 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
   }
 
   async function spentLast30d(userId) {
-    const row = await one("SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE user_id = ? AND status IN ('paid', 'open', 'pending', 'authorized') AND created_at > ?", userId, now() - 30 * DAY);
+    const row = await one(`SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE user_id = ? AND status IN ${COUNTED} AND created_at > ?`, userId, now() - 30 * DAY);
     return row.total;
   }
 
-  // Levert een betaald product precies één keer.
+  // Levert een betaald product precies één keer: leveren en 'paid' zetten gebeuren samen in één transactie.
   async function fulfil(paymentId) {
-    const marked = await run("UPDATE payments SET status = 'paid' WHERE id = ? AND status != 'paid'", paymentId);
-    if (marked.meta.changes !== 1) return;
     const pay = await one("SELECT user_id, product FROM payments WHERE id = ?", paymentId);
+    if (!pay || !Object.hasOwn(PRODUCTS, pay.product)) return;
     const product = PRODUCTS[pay.product];
-    if (product.eggs) {
-      await run("UPDATE users SET bought_eggs = bought_eggs + ? WHERE id = ?", product.eggs, pay.user_id);
-    } else {
-      const user = await one("SELECT premium_until FROM users WHERE id = ?", pay.user_id);
-      await run("UPDATE users SET premium_until = ? WHERE id = ?", Math.max(now(), user.premium_until) + product.days * DAY, pay.user_id);
-    }
+    const notPaid = "EXISTS (SELECT 1 FROM payments WHERE id = ? AND status != 'paid')";
+    const t = now();
+    await db.batch([
+      db.prepare("UPDATE payments SET status = status WHERE id = ?").bind(paymentId), // slot: een tweede levering wacht hierop
+      product.eggs
+        ? db.prepare(`UPDATE users SET bought_eggs = bought_eggs + ? WHERE id = ? AND ${notPaid}`).bind(product.eggs, pay.user_id, paymentId)
+        : db.prepare(`UPDATE users SET premium_until = (CASE WHEN premium_until > ? THEN premium_until ELSE ? END) + ? WHERE id = ? AND ${notPaid}`).bind(t, t, product.days * DAY, pay.user_id, paymentId),
+      db.prepare("UPDATE payments SET status = 'paid' WHERE id = ?").bind(paymentId),
+    ]);
   }
 
   async function checkMolliePayment(paymentId) {
-    const row = await one("SELECT * FROM payments WHERE id = ?", paymentId);
-    if (!row || row.status === "paid") return;
+    let row = await one("SELECT * FROM payments WHERE id = ?", paymentId);
+    if (row?.status === "paid") return;
     const payment = await mollie.getPayment(paymentId);
+    // Kon het Mollie-id na het aanmaken niet worden opgeslagen? Dan vinden we de reservering via de metadata.
+    if (!row && payment.metadata?.ref) {
+      await run("UPDATE payments SET id = ?, status = 'open' WHERE id = ? AND status = 'reserving'", paymentId, String(payment.metadata.ref));
+      row = await one("SELECT * FROM payments WHERE id = ?", paymentId);
+    }
+    if (!row) return;
     if (payment.status === "paid" && payment.metadata?.userId === row.user_id) await fulfil(paymentId);
-    else if (payment.status !== row.status) await run("UPDATE payments SET status = ? WHERE id = ? AND status != 'paid'", payment.status, paymentId);
+    else if (payment.status !== row.status && payment.status !== "paid") await run("UPDATE payments SET status = ? WHERE id = ? AND status != 'paid'", payment.status, paymentId);
   }
 
   // Haal `n` exemplaren van een kaart weg; verwijdert de rij als er 0 overblijven. Geeft true als het lukte.
@@ -143,6 +161,7 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
         rules: RULES,
         products: PRODUCTS,
         demoMode,
+        mail: mailer.configured !== false,
       }),
 
     "POST /api/register": async (req, body) => {
@@ -155,31 +174,64 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
       if (body.adult !== true) return fail(400, "Je moet 18 jaar of ouder zijn.");
       // Onzichtbaar veld: mensen zien het niet, simpele bots vullen het wel in.
       if (body.website) return fail(400, "Er ging iets mis. Probeer het opnieuw.");
+      const nameTaken = "Die gebruikersnaam is al bezet.";
+      const emailTaken = "Er bestaat al een account met dit e-mailadres. Log in, of gebruik 'Wachtwoord vergeten'.";
+      if (await one("SELECT 1 FROM users WHERE lower(username) = lower(?)", username)) return fail(409, nameTaken);
+      if (await one("SELECT 1 FROM users WHERE email = ?", email)) return fail(409, emailTaken);
+      // Plek reserveren binnen de limieten, in één keer (ook als er tientallen tegelijk binnenkomen).
       const ipHash = await hashIp(clientIp(req), ipSalt);
-      const fromIp = await one("SELECT COUNT(*) AS n FROM registrations WHERE ip_hash = ? AND created_at > ?", ipHash, now() - DAY);
-      if (fromIp.n >= RULES.accountsPerIpPerDay) {
-        return fail(429, `Vanaf dit netwerk zijn vandaag al ${RULES.accountsPerIpPerDay} accounts aangemaakt. Probeer het morgen opnieuw, of log in met je bestaande account.`);
+      const [, reserved] = await db.batch([
+        lock("register"),
+        db
+          .prepare(
+            `INSERT INTO registrations (ip_hash, created_at) SELECT CAST(? AS TEXT), CAST(? AS BIGINT)
+             WHERE (SELECT COUNT(*) FROM registrations WHERE ip_hash = ? AND created_at > ?) < ? AND (SELECT COUNT(*) FROM registrations WHERE created_at > ?) < ?`
+          )
+          .bind(ipHash, now(), ipHash, now() - DAY, RULES.accountsPerIpPerDay, now() - HOUR, RULES.accountsPerHourTotal),
+      ]);
+      if (reserved.meta.changes !== 1) {
+        const fromIp = await one("SELECT COUNT(*) AS n FROM registrations WHERE ip_hash = ? AND created_at > ?", ipHash, now() - DAY);
+        return fromIp.n >= RULES.accountsPerIpPerDay
+          ? fail(429, `Vanaf dit netwerk zijn vandaag al ${RULES.accountsPerIpPerDay} accounts aangemaakt. Probeer het morgen opnieuw, of log in met je bestaande account.`)
+          : fail(429, "Het is even heel druk. Probeer het over een uurtje opnieuw.");
       }
-      const lastHour = await one("SELECT COUNT(*) AS n FROM registrations WHERE created_at > ?", now() - HOUR);
-      if (lastHour.n >= RULES.accountsPerHourTotal) return fail(429, "Het is even heel druk. Probeer het over een uurtje opnieuw.");
-      if (await one("SELECT 1 FROM users WHERE lower(username) = lower(?)", username)) return fail(409, "Die gebruikersnaam is al bezet.");
-      if (await one("SELECT 1 FROM users WHERE email = ?", email)) return fail(409, "Er bestaat al een account met dit e-mailadres. Log in, of gebruik 'Wachtwoord vergeten'.");
       const { hash, salt } = await hashPassword(password);
       const id = crypto.randomUUID();
-      await run(
-        "INSERT INTO users (id, username, email, pass_hash, pass_salt, created_at, pack_credits, credits_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        id, username, email, hash, salt, new Date(now()).toISOString(), RULES.free.max, now()
-      );
-      await run("INSERT INTO registrations (ip_hash, created_at) VALUES (?, ?)", ipHash, now());
+      try {
+        await run(
+          "INSERT INTO users (id, username, email, pass_hash, pass_salt, created_at, pack_credits, credits_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          id, username, email, hash, salt, new Date(now()).toISOString(), RULES.free.max, now()
+        );
+      } catch (err) {
+        if (!isUniqueViolation(err)) throw err;
+        // Iemand anders was ons net voor met dezelfde naam of hetzelfde e-mailadres.
+        return fail(409, (await one("SELECT 1 FROM users WHERE email = ?", email)) ? emailTaken : nameTaken);
+      }
       return json({ ok: true }, 201, { "Set-Cookie": await startSession(req, id) });
     },
 
     "POST /api/login": async (req, body) => {
-      const login = String(body.login ?? body.username ?? "").trim();
+      const login = String(body.login ?? body.username ?? "").trim().slice(0, 254);
+      const password = String(body.password || "");
+      const acctKey = await sha256(`${ipSalt}:login:${login.toLowerCase()}`);
+      const ipKey = await sha256(`${ipSalt}:login-ip:${clientIp(req)}`);
+      const fails = await one(
+        "SELECT SUM(CASE WHEN key_hash = ? THEN 1 ELSE 0 END) AS acct, SUM(CASE WHEN key_hash = ? THEN 1 ELSE 0 END) AS ip FROM login_fails WHERE key_hash IN (?, ?) AND created_at > ?",
+        acctKey, ipKey, acctKey, ipKey, now() - 15 * 60 * 1000
+      );
+      if ((fails?.acct || 0) >= RULES.loginFailsPerAccount || (fails?.ip || 0) >= RULES.loginFailsPerIp) {
+        return fail(429, "Te veel mislukte pogingen. Wacht een kwartiertje, of gebruik 'Wachtwoord vergeten'.");
+      }
       const user = login.includes("@")
         ? await one("SELECT * FROM users WHERE email = ?", normEmail(login))
         : await one("SELECT * FROM users WHERE lower(username) = lower(?)", login);
-      if (!user || !(await verifyPassword(String(body.password || ""), user.pass_salt, user.pass_hash))) {
+      dummyHash ??= await hashPassword("dummy-wachtwoord");
+      const good = user ? await verifyPassword(password, user.pass_salt, user.pass_hash) : (await verifyPassword(password, dummyHash.salt, dummyHash.hash), false);
+      if (!user || !good) {
+        await db.batch([
+          db.prepare("INSERT INTO login_fails (key_hash, created_at) VALUES (?, ?)").bind(acctKey, now()),
+          db.prepare("INSERT INTO login_fails (key_hash, created_at) VALUES (?, ?)").bind(ipKey, now()),
+        ]);
         return fail(401, "E-mail/gebruikersnaam of wachtwoord klopt niet.");
       }
       return json({ ok: true }, 200, { "Set-Cookie": await startSession(req, user.id) });
@@ -211,7 +263,7 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
         subject: `${GAME_NAME}: nieuw wachtwoord instellen`,
         text: `Hoi ${user.username},\n\nKlik op deze link om een nieuw wachtwoord in te stellen (${RULES.resetLinkMinutes} minuten geldig):\n${link}\n\nHeb je dit niet aangevraagd? Dan kun je deze mail negeren.\n\nGroeten van ${GAME_NAME} 🦖`,
         html: `<p>Hoi ${user.username},</p><p>Klik op de knop om een nieuw wachtwoord in te stellen. De link is ${RULES.resetLinkMinutes} minuten geldig.</p><p><a href="${link}" style="background:#ffb703;color:#2b1a05;padding:12px 20px;border-radius:99px;text-decoration:none;font-weight:bold">Nieuw wachtwoord instellen</a></p><p style="color:#777">Heb je dit niet aangevraagd? Dan kun je deze mail negeren.</p>`,
-      });
+      }).catch((err) => console.error("Resetmail niet verstuurd:", err.message)); // zelfde antwoord, ook als de mail faalt
       return ok;
     },
 
@@ -226,6 +278,7 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
       if (claimed.meta.changes !== 1) return fail(400, "Deze link is verlopen of al gebruikt. Vraag een nieuwe aan.");
       const { hash, salt } = await hashPassword(password);
       await run("UPDATE users SET pass_hash = ?, pass_salt = ? WHERE id = ?", hash, salt, reset.user_id);
+      await run("UPDATE password_resets SET used = 1 WHERE user_id = ?", reset.user_id); // andere resetlinks vervallen
       await run("DELETE FROM sessions WHERE user_id = ?", reset.user_id); // overal uitloggen
       return json({ ok: true }, 200, { "Set-Cookie": await startSession(req, reset.user_id) });
     },
@@ -333,15 +386,16 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
 
     // Versteen kaarten tot fossielen.
     "POST /api/fossils/dust": async (_req, body, user) => {
-      const parsed = parseKey(String(body.key || ""));
+      const parsed = typeof body.key === "string" ? parseKey(body.key) : null;
       if (!parsed) return fail(400, "Onbekende kaart.");
+      const key = keyOf(parsed.card.id, parsed.variant);
       const per = dustValue(parsed.card, parsed.variant);
       if (per == null) return fail(400, "Oerkristal-kaarten zijn genummerd en kun je niet verstenen.");
-      const n = Math.floor(Number(body.count) || 1);
-      const owned = (await one("SELECT count FROM collection WHERE user_id = ? AND card_id = ?", user.id, body.key))?.count || 0;
-      if (n < 1 || n > owned) return fail(400, "Zoveel heb je er niet.");
-      if (!(await takeCards(user.id, body.key, n, owned))) return fail(409, "Probeer het nog eens.");
-      await run("UPDATE users SET fossils = fossils + ?, score = score - ? WHERE id = ?", per * n, pointsOf(body.key) * n, user.id);
+      const n = body.count === undefined ? 1 : Number(body.count);
+      const owned = (await one("SELECT count FROM collection WHERE user_id = ? AND card_id = ?", user.id, key))?.count || 0;
+      if (!Number.isInteger(n) || n < 1 || n > owned) return fail(400, "Zoveel heb je er niet.");
+      if (!(await takeCards(user.id, key, n, owned))) return fail(409, "Probeer het nog eens.");
+      await run("UPDATE users SET fossils = fossils + ?, score = score - ? WHERE id = ?", per * n, pointsOf(key) * n, user.id);
       return json({ gained: per * n });
     },
 
@@ -365,7 +419,7 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
 
     // Maak een dino naar keuze van fossielen (alleen Normaal of Holo).
     "POST /api/fossils/craft": async (_req, body, user) => {
-      const parsed = parseKey(String(body.key || ""));
+      const parsed = typeof body.key === "string" ? parseKey(body.key) : null;
       if (!parsed) return fail(400, "Onbekende kaart.");
       const cost = craftCost(parsed.card, parsed.variant);
       if (cost == null) return fail(400, "Goudfolie, Prisma en Oerkristal vind je alleen in eieren.");
@@ -377,35 +431,51 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
     },
 
     "POST /api/checkout": async (req, body, user) => {
-      const productId = String(body.product || "");
+      const productId = typeof body.product === "string" ? body.product : "";
+      if (!Object.hasOwn(PRODUCTS, productId)) return fail(400, "Onbekend product.");
       const product = PRODUCTS[productId];
-      if (!product) return fail(400, "Onbekend product.");
-      if ((await spentLast30d(user.id)) + product.price > RULES.spendCap30d) {
+      // Eerst het bedrag reserveren binnen de limiet (in één keer, ook bij gelijktijdige klikken), dan pas naar Mollie.
+      const ref = `${demoMode ? "demo" : "res"}_${randomHex(12)}`;
+      const [, reserved] = await db.batch([
+        lock(`pay:${user.id}`),
+        db
+          .prepare(
+            `INSERT INTO payments (id, user_id, product, amount, status, created_at)
+             SELECT CAST(? AS TEXT), CAST(? AS TEXT), CAST(? AS TEXT), CAST(? AS INTEGER), 'reserving', CAST(? AS BIGINT)
+             WHERE (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE user_id = ? AND status IN ${COUNTED} AND created_at > ?) + ? <= ?`
+          )
+          .bind(ref, user.id, productId, product.price, now(), user.id, now() - 30 * DAY, product.price, RULES.spendCap30d),
+      ]);
+      if (reserved.meta.changes !== 1) {
         return fail(429, `Je zit aan je limiet van €${RULES.spendCap30d / 100} per 30 dagen. Dat is er om je te beschermen.`);
       }
       if (demoMode) {
-        const id = `demo_${randomHex(8)}`;
-        await run("INSERT INTO payments (id, user_id, product, amount, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)", id, user.id, productId, product.price, now());
-        await fulfil(id);
+        await fulfil(ref);
         return json({ url: "/#/winkel?betaald=1" });
       }
       const origin = new URL(req.url).origin;
-      const payment = await mollie.createPayment({
-        amount: { currency: "EUR", value: centsToMollie(product.price) },
-        description: `${GAME_NAME} – ${product.label}`,
-        redirectUrl: `${origin}/#/winkel?betaald=1`,
-        ...(origin.startsWith("https://") ? { webhookUrl: `${origin}/api/mollie/webhook` } : {}),
-        locale: "nl_NL",
-        metadata: { userId: user.id, product: productId },
-      });
-      await run("INSERT INTO payments (id, user_id, product, amount, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)", payment.id, user.id, productId, product.price, now());
+      let payment;
+      try {
+        payment = await mollie.createPayment({
+          amount: { currency: "EUR", value: centsToMollie(product.price) },
+          description: `${GAME_NAME} – ${product.label}`,
+          redirectUrl: `${origin}/#/winkel?betaald=1`,
+          ...(origin.startsWith("https://") ? { webhookUrl: `${origin}/api/mollie/webhook` } : {}),
+          locale: "nl_NL",
+          metadata: { userId: user.id, product: productId, ref },
+        });
+      } catch (err) {
+        await run("DELETE FROM payments WHERE id = ?", ref);
+        throw err;
+      }
+      await run("UPDATE payments SET id = ?, status = 'open' WHERE id = ? AND status = 'reserving'", payment.id, ref);
       return json({ url: payment._links.checkout.href });
     },
 
     // Terug van Mollie: openstaande betalingen van deze gebruiker nacontroleren.
     "POST /api/checkout/verify": async (_req, _body, user) => {
       if (mollie) {
-        const open = await all("SELECT id FROM payments WHERE user_id = ? AND status NOT IN ('paid', 'failed', 'canceled', 'expired') AND created_at > ?", user.id, now() - DAY);
+        const open = await all("SELECT id FROM payments WHERE user_id = ? AND status NOT IN ('paid', 'failed', 'canceled', 'expired', 'reserving') AND created_at > ?", user.id, now() - DAY);
         for (const p of open) await checkMolliePayment(p.id);
       }
       const last = await one("SELECT product, status FROM payments WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", user.id);
@@ -416,8 +486,10 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
   return async function handle(req) {
     const { pathname } = new URL(req.url);
     const key = `${req.method} ${pathname}`;
-    const isJson = (req.headers.get("Content-Type") || "").includes("application/json");
-    const body = req.method === "POST" && isJson ? await req.json().catch(() => ({})) : {};
+    // Alleen echte JSON: 'text/plain' mag een andere website ongevraagd sturen, 'application/json' niet.
+    const isJson = (req.headers.get("Content-Type") || "").split(";")[0].trim().toLowerCase() === "application/json";
+    const parsed = req.method === "POST" && isJson ? await req.json().catch(() => null) : null;
+    const body = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
 
     try {
       if (publicRoutes[key]) return await publicRoutes[key](req, body);

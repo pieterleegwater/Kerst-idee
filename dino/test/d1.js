@@ -29,8 +29,9 @@ export function testDb() {
     async batch(stmts) {
       sqlite.exec("BEGIN");
       try {
-        for (const s of stmts) s._exec();
+        const results = stmts.map((s) => ({ meta: { changes: Number(s._exec().changes) } }));
         sqlite.exec("COMMIT");
+        return results;
       } catch (err) {
         sqlite.exec("ROLLBACK");
         throw err;

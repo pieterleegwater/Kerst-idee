@@ -13,5 +13,7 @@ export default {
   async scheduled(_event, env) {
     await env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(Date.now()).run();
     await env.DB.prepare("DELETE FROM registrations WHERE created_at < ?").bind(Date.now() - 30 * 24 * 3600 * 1000).run();
+    await env.DB.prepare("DELETE FROM login_fails WHERE created_at < ?").bind(Date.now() - 24 * 3600 * 1000).run();
+    await env.DB.prepare("DELETE FROM payments WHERE status = 'reserving' AND created_at < ?").bind(Date.now() - 3600 * 1000).run();
   },
 };
