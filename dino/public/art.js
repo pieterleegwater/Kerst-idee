@@ -148,34 +148,75 @@ const DRAW = {
   },
 };
 
-function scene(groupId, colors, r, id) {
-  const [c1, c2] = colors;
-  const bg = `<defs><linearGradient id="bg${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="#000" stop-opacity=".85"/></linearGradient></defs>
-    <rect width="120" height="90" fill="url(#bg${id})"/>`;
-  const dots = (n, fill, rmax, opacity = 0.8) =>
-    Array.from({ length: n }, () => `<circle cx="${(r() * 120).toFixed(1)}" cy="${(r() * 60).toFixed(1)}" r="${(0.6 + r() * rmax).toFixed(1)}" fill="${fill}" opacity="${opacity}"/>`).join("");
-  const deco = {
-    vuur: `<path d="M64 84 L86 40 L98 40 L120 84Z" fill="#370617" opacity=".9"/><path d="M86 40 Q92 34 98 40 L95 48 Q92 44 89 48Z" fill="${c2}"/>${dots(10, c2, 1.4)}`,
-    ijs: `<path d="M0 84 L24 46 L40 64 L58 36 L84 84Z" fill="#e0fbfc" opacity=".35"/>${dots(18, "#fff", 1.2, 0.9)}`,
-    jungle: `<ellipse cx="8" cy="16" rx="22" ry="7" transform="rotate(35 8 16)" fill="#081c15" opacity=".6"/><ellipse cx="114" cy="22" rx="24" ry="7" transform="rotate(-30 114 22)" fill="#081c15" opacity=".6"/><ellipse cx="104" cy="70" rx="18" ry="5" transform="rotate(-20 104 70)" fill="#1b4332" opacity=".7"/>`,
-    oceaan: `<path d="M0 30 Q15 26 30 30 T60 30 T90 30 T120 30" stroke="${c2}" stroke-width="1.2" fill="none" opacity=".5"/>${Array.from({ length: 9 }, () => `<circle cx="${(r() * 120).toFixed(1)}" cy="${(r() * 80).toFixed(1)}" r="${(1 + r() * 2.5).toFixed(1)}" fill="none" stroke="#fff" opacity=".4"/>`).join("")}`,
-    storm: `<path d="M86 0 L76 24 L86 24 L72 48 L94 18 L84 18 L94 0Z" fill="#ffd60a" opacity=".85"/><ellipse cx="24" cy="10" rx="26" ry="8" fill="#000" opacity=".25"/>`,
-    schaduw: `<circle cx="96" cy="18" r="12" fill="#f8f9fa" opacity=".85"/><circle cx="101" cy="15" r="10" fill="${c1}" opacity=".9"/>${dots(14, "#fff", 0.8, 0.9)}`,
-  }[groupId];
-  return bg + deco;
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  const mix = (c) => Math.round(amt > 0 ? c + (255 - c) * amt : c * (1 + amt));
+  return `#${[(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => mix(c).toString(16).padStart(2, "0")).join("")}`;
 }
 
-export function dinoSvg(card, group) {
+function scene(groupId, colors, r, id, { variant, legendary }) {
+  const [c1, c2] = colors;
+  const dots = (n, fill, rmax, opacity = 0.8) =>
+    Array.from({ length: n }, () => `<circle cx="${(r() * 120).toFixed(1)}" cy="${(r() * 62).toFixed(1)}" r="${(0.5 + r() * rmax).toFixed(1)}" fill="${fill}" opacity="${(opacity * (0.4 + r() * 0.6)).toFixed(2)}"/>`).join("");
+  if (variant === "kristal") {
+    // Oerkristal: diepzwarte achtergrond vol gekleurde kristalscherven
+    const shards = Array.from({ length: 14 }, () => {
+      const x = r() * 120, y = r() * 90, w = 6 + r() * 14, h = 14 + r() * 26, t = (r() * 60 - 30).toFixed(0);
+      const hue = Math.floor(r() * 360);
+      return `<polygon points="${x},${y - h / 2} ${x + w / 2},${y} ${x},${y + h / 2} ${x - w / 2},${y}" transform="rotate(${t} ${x} ${y})" fill="hsl(${hue} 90% 65%)" opacity="${(0.25 + r() * 0.45).toFixed(2)}"/>`;
+    }).join("");
+    return `<rect width="120" height="90" fill="#06060f"/><radialGradient id="kc${id}" cx=".5" cy=".55" r=".6"><stop offset="0" stop-color="${c2}" stop-opacity=".55"/><stop offset="1" stop-color="#06060f" stop-opacity="0"/></radialGradient>${shards}<rect width="120" height="90" fill="url(#kc${id})"/>`;
+  }
+  const bg = `<linearGradient id="bg${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${shade(c1, 0.15)}"/><stop offset=".6" stop-color="${shade(c1, -0.35)}"/><stop offset="1" stop-color="${shade(c1, -0.75)}"/></linearGradient>
+    <rect width="120" height="90" fill="url(#bg${id})"/>`;
+  const rays = legendary
+    ? `<g opacity=".18">${[-38, -18, 0, 18, 38].map((a) => `<polygon points="60,-10 54,95 66,95" fill="#fff" transform="rotate(${a} 60 -10)"/>`).join("")}</g>`
+    : "";
+  const deco = {
+    vuur: `<path d="M58 84 L84 34 L98 34 L124 84Z" fill="${shade(c1, -0.8)}"/><path d="M84 34 Q91 26 98 34 L95 44 Q91 38 87 44Z" fill="${c2}"/><path d="M89 30 Q86 18 92 8" stroke="#555" stroke-width="5" fill="none" opacity=".35" stroke-linecap="round"/>${dots(14, c2, 1.3)}`,
+    ijs: `<path d="M-4 84 L22 40 L36 58 L56 28 L86 84Z" fill="#e0fbfc" opacity=".28"/><path d="M22 40 L28 50 L18 52Z M56 28 L64 42 L50 44Z" fill="#fff" opacity=".5"/>${dots(22, "#fff", 1.1, 1)}`,
+    jungle: `<ellipse cx="6" cy="14" rx="24" ry="7" transform="rotate(35 6 14)" fill="#081c15" opacity=".7"/><ellipse cx="116" cy="20" rx="26" ry="7" transform="rotate(-30 116 20)" fill="#081c15" opacity=".7"/><ellipse cx="108" cy="72" rx="18" ry="5" transform="rotate(-20 108 72)" fill="#1b4332" opacity=".8"/>${dots(8, "#d8f3dc", 0.9, 0.7)}`,
+    oceaan: `<path d="M0 26 Q15 21 30 26 T60 26 T90 26 T120 26" stroke="${c2}" stroke-width="1.4" fill="none" opacity=".55"/>${[20, 50, 80].map((x) => `<polygon points="${x},0 ${x - 8},90 ${x + 10},90" fill="#fff" opacity=".05"/>`).join("")}${Array.from({ length: 10 }, () => `<circle cx="${(r() * 120).toFixed(1)}" cy="${(r() * 80).toFixed(1)}" r="${(1 + r() * 2.5).toFixed(1)}" fill="none" stroke="#fff" opacity=".45"/>`).join("")}`,
+    storm: `<ellipse cx="24" cy="8" rx="30" ry="9" fill="#000" opacity=".3"/><ellipse cx="96" cy="4" rx="34" ry="9" fill="#000" opacity=".3"/><path d="M88 0 L78 24 L88 24 L74 50 L96 18 L86 18 L96 0Z" fill="#ffd60a"/><path d="M88 0 L78 24 L88 24 L74 50 L96 18 L86 18 L96 0Z" fill="none" stroke="#fff8" stroke-width="1"/>`,
+    schaduw: `<circle cx="96" cy="18" r="13" fill="#f8f9fa" opacity=".9"/><circle cx="101" cy="15" r="11" fill="${shade(c1, 0.1)}"/>${dots(20, "#fff", 0.8, 1)}`,
+  }[groupId];
+  const vignette = `<radialGradient id="vg${id}" cx=".5" cy=".45" r=".75"><stop offset=".55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".6"/></radialGradient>`;
+  return bg + rays + deco + vignette;
+}
+
+/**
+ * @param {object} card  kaart uit de catalogus
+ * @param {object} group het rijk
+ * @param {{ variant?: string, silhouette?: boolean }} opts
+ */
+export function dinoSvg(card, group, { variant = "normaal", silhouette = false } = {}) {
   const r = rng(card.look + 7);
   const palette = BODY[card.group];
-  const body = palette[Math.floor(r() * palette.length)];
+  const base = palette[Math.floor(r() * palette.length)];
   const accent = group.colors[1];
-  const eyeColor = EYES[Math.floor(r() * EYES.length)];
+  const eyeColor = card.rarity === "icoon" || variant === "kristal" ? "#fff200" : EYES[Math.floor(r() * EYES.length)];
+  const id = `${card.number}${variant[0]}${silhouette ? "s" : ""}`;
   const flying = card.type === "ptero";
   const swimming = card.type === "zee";
-  const ground = flying || swimming ? "" : `<ellipse cx="58" cy="81" rx="40" ry="4.5" fill="#000" opacity=".3"/>`;
-  return `<svg class="art" viewBox="0 0 120 90" aria-hidden="true">
-    ${scene(card.group, group.colors, r, card.number)}${ground}
-    <g transform="translate(0 ${flying ? 8 : swimming ? 4 : 0})">${DRAW[card.type](body, BELLY[card.group], accent, eyeColor, r, card.species)}</g>
+  const glow = !silhouette && (card.rarity === "icoon" || ["goud", "prisma", "kristal"].includes(variant));
+  const glowColor = variant === "goud" ? "#ffd166" : variant === "kristal" ? "#7df9ff" : accent;
+  const defs = `<defs>
+    <radialGradient id="bd${id}" cx=".35" cy=".25" r=".95"><stop offset="0" stop-color="${shade(base, 0.45)}"/><stop offset=".5" stop-color="${base}"/><stop offset="1" stop-color="${shade(base, -0.45)}"/></radialGradient>
+    ${glow ? `<filter id="gl${id}" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="0" stdDeviation="2.4" flood-color="${glowColor}" flood-opacity=".95"/></filter>` : ""}
+  </defs>`;
+  const back = silhouette
+    ? `<rect width="120" height="90" fill="#120c07"/><circle cx="60" cy="48" r="38" fill="${group.colors[0]}" opacity=".18"/>`
+    : scene(card.group, group.colors, r, id, { variant, legendary: card.rarity === "icoon" });
+  const ground = flying || swimming ? "" : `<ellipse cx="58" cy="81" rx="42" ry="5" fill="#000" opacity=".4"/>`;
+  const dino = DRAW[card.type](`url(#bd${id})`, BELLY[card.group], accent, eyeColor, r, card.species);
+  const shift = flying ? 8 : swimming ? 4 : 0;
+  const vignette = silhouette || variant === "kristal" ? "" : `<rect width="120" height="90" fill="url(#vg${id})"/>`;
+  // Full-art (Prisma, Oerkristal): vierkantere uitsnede zodat de hele dino in beeld blijft.
+  const full = variant === "prisma" || variant === "kristal";
+  const viewBox = full ? "-4 -20 128 128" : "0 0 120 90";
+  const base0 = full ? `<rect x="-4" y="-20" width="128" height="128" fill="${variant === "kristal" ? "#06060f" : shade(group.colors[0], 0.1)}"/>` : "";
+  return `<svg class="dart${silhouette ? " silhouette" : ""}" viewBox="${viewBox}" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    ${defs}${base0}${back}${vignette}${ground}
+    <g class="dino" transform="translate(0 ${shift})" ${glow ? `filter="url(#gl${id})"` : ""}>${dino}</g>
   </svg>`;
 }

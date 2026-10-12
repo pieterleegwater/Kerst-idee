@@ -1,16 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createApp, RULES, packState } from "../src/app.js";
-import { CARDS, BY_RARITY, drawPack, PACK_SIZE } from "../src/cards.js";
+import { CARDS, BY_RARITY, drawPack, PACK_SIZE, parseKey, KRISTAL_CAP } from "../src/cards.js";
 import { testDb } from "./d1.js";
 
 const BASE = "https://dinorijk.example";
 const HOUR = 3600 * 1000;
 
-function setup({ mollie = null } = {}) {
+function setup({ mollie = null, random } = {}) {
   const db = testDb();
   let clock = Date.UTC(2026, 10, 1);
-  const app = createApp({ db, mollie, now: () => clock });
+  const app = createApp({ db, mollie, now: () => clock, ...(random ? { random } : {}) });
   const client = () => {
     let cookie = "";
     const call = async (method, path, body, headers = {}) => {
@@ -54,7 +54,7 @@ test("pakje: 5 kaarten, laatste minimaal Zilver", () => {
   for (let i = 0; i < 200; i++) {
     const pack = drawPack(rand);
     assert.equal(pack.length, PACK_SIZE);
-    assert.notEqual(CARDS.find((c) => c.id === pack[4]).rarity, "brons");
+    assert.notEqual(parseKey(pack[4]).card.rarity, "brons");
   }
 });
 
@@ -163,4 +163,44 @@ test("seizoenspas via Mollie: pas actief na 'paid', extra pakjes", async () => {
   assert.ok(me.premiumUntil);
   assert.equal(me.premiumUntil - (await a("GET", "/api/me")).body.premiumUntil, 0);
   assert.equal(me.packs.max, RULES.premium.max);
+});
+
+test("Oerkristal: genummerd, maximaal KRISTAL_CAP per dino, daarna Prisma", async () => {
+  // random() = bijna 0 → steeds Legendarisch, eerste kaart, Oerkristal
+  const { client, tick } = setup({ random: () => 0.00001 });
+  const a = client();
+  await register(a, "geluk");
+  const serials = [];
+  const keys = [];
+  for (let i = 0; i < 6; i++) {
+    const { body } = await a("POST", "/api/packs/open");
+    for (const c of body.cards) (keys.push(c.key), c.serial && serials.push(c.serial));
+    tick(RULES.free.interval);
+  }
+  assert.deepEqual(serials, Array.from({ length: KRISTAL_CAP }, (_, i) => i + 1));
+  assert.equal(keys.filter((k) => k.endsWith(":prisma")).length, 30 - KRISTAL_CAP);
+  const me = (await a("GET", "/api/me")).body;
+  assert.equal(me.prints.length, KRISTAL_CAP);
+  assert.ok(me.value > 0);
+  assert.equal((await a("GET", "/api/kristal")).body.found[parseKey(keys[0]).card.id], KRISTAL_CAP);
+});
+
+test("kluiskaarten zijn niet ruilbaar; holo alleen tegen holo", async () => {
+  const { db, client } = setup();
+  const a = client();
+  const b = client();
+  await register(a, "anna");
+  await register(b, "bram");
+  const [x, y] = BY_RARITY.zilver;
+  await give(db, "anna", `${x.id}:prisma`, 3);
+  await give(db, "bram", `${y.id}:prisma`, 3);
+  assert.equal((await a("POST", "/api/trades", { to: "bram", give: `${x.id}:prisma`, want: `${y.id}:prisma` })).status, 400);
+  await give(db, "anna", `${x.id}:holo`, 2);
+  await give(db, "bram", y.id, 2);
+  assert.equal((await a("POST", "/api/trades", { to: "bram", give: `${x.id}:holo`, want: y.id })).status, 400);
+  await give(db, "bram", `${y.id}:holo`, 2);
+  const { status, body } = await a("POST", "/api/trades", { to: "bram", give: `${x.id}:holo`, want: `${y.id}:holo` });
+  assert.equal(status, 201);
+  assert.equal((await b("POST", `/api/trades/${body.id}/accept`)).status, 200);
+  assert.equal((await a("GET", "/api/me")).body.collection[`${y.id}:holo`], 1);
 });

@@ -44,3 +44,13 @@ CREATE TABLE IF NOT EXISTS payments (
   status TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+
+-- Genummerde Oerkristal-kaarten: per dino maximaal KRISTAL_CAP exemplaren wereldwijd.
+CREATE TABLE IF NOT EXISTS prints (
+  card_id TEXT NOT NULL,
+  serial INTEGER NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (card_id, serial)
+);
+CREATE INDEX IF NOT EXISTS prints_user ON prints (user_id);

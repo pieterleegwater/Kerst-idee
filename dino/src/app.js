@@ -1,4 +1,4 @@
-import { CARDS, CARD_BY_ID, GROUPS, GAME_NAME, TYPES, PUBLISHED_ODDS, RARITIES, SEASON, drawPack, cryptoRandom } from "./cards.js";
+import { CARDS, GROUPS, GAME_NAME, TYPES, PUBLISHED_ODDS, RARITIES, SEASON, VARIANTS, KRISTAL_CAP, RARITY_POINTS, drawPack, cryptoRandom, keyOf, parseKey, pointsOf } from "./cards.js";
 import { hashPassword, randomHex, verifyPassword } from "./auth.js";
 import { centsToMollie } from "./mollie.js";
 
@@ -81,7 +81,7 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
 
   const publicRoutes = {
     "GET /api/catalog": async () =>
-      json({ game: GAME_NAME, season: SEASON, groups: GROUPS.map(({ id, name, colors, title }) => ({ id, name, colors, title })), types: TYPES, rarities: RARITIES, cards: CARDS, odds: PUBLISHED_ODDS, rules: RULES, pass: PASS, demoMode }),
+      json({ game: GAME_NAME, season: SEASON, groups: GROUPS.map(({ id, name, colors, title }) => ({ id, name, colors, title })), types: TYPES, rarities: RARITIES, variants: VARIANTS, kristalCap: KRISTAL_CAP, rarityPoints: RARITY_POINTS, cards: CARDS, odds: PUBLISHED_ODDS, rules: RULES, pass: PASS, demoMode }),
 
     "POST /api/register": async (req, body) => {
       const username = String(body.username || "").trim();
@@ -113,6 +113,11 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
       return json({ ok: true }, 200, { "Set-Cookie": "sid=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0" });
     },
 
+    "GET /api/kristal": async () => {
+      const rows = await all("SELECT card_id, COUNT(*) AS n FROM prints GROUP BY card_id");
+      return json({ cap: KRISTAL_CAP, found: Object.fromEntries(rows.map((r) => [r.card_id, r.n])) });
+    },
+
     // Mollie stuurt alleen het betaling-id; de status halen we zelf op.
     "POST /api/mollie/webhook": async (req) => {
       if (!mollie) return new Response("ok");
@@ -127,6 +132,7 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
     "GET /api/me": async (_req, _body, user) => {
       const pack = packState(user, now());
       const rows = await all("SELECT card_id, count FROM collection WHERE user_id = ?", user.id);
+      const prints = await all("SELECT card_id, serial FROM prints WHERE user_id = ? ORDER BY created_at", user.id);
       const tradesToday = (await one("SELECT COUNT(*) AS n FROM trades WHERE from_user = ? AND created_at > ?", user.id, now() - DAY)).n;
       return json({
         username: user.username,
@@ -134,6 +140,8 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
         premiumUntil: user.premium_until > now() ? user.premium_until : null,
         packsOpened: user.packs_opened,
         collection: Object.fromEntries(rows.map((r) => [r.card_id, r.count])),
+        prints: prints.map((p) => ({ cardId: p.card_id, serial: p.serial })),
+        value: rows.reduce((sum, r) => sum + pointsOf(r.card_id) * r.count, 0),
         tradesLeftToday: Math.max(0, RULES.tradesPerDay - tradesToday),
       });
     },
@@ -148,9 +156,27 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
         pack.credits - 1, nextAt, user.id, user.pack_credits, user.credits_at
       );
       if (res.meta.changes !== 1) return fail(409, "Probeer het nog eens.");
-      const cards = drawPack(random);
+      const drawn = drawPack(random);
+      const cards = [];
+      for (const key of drawn) {
+        const { card, variant } = parseKey(key);
+        if (variant !== "kristal") {
+          cards.push({ key });
+          continue;
+        }
+        // Volgend serienummer, maar alleen als de oplage nog niet op is (atomair in één statement).
+        const res = await run(
+          `INSERT INTO prints (card_id, serial, user_id, created_at)
+           SELECT ?, COALESCE(MAX(serial), 0) + 1, ?, ? FROM prints WHERE card_id = ? HAVING COALESCE(MAX(serial), 0) < ?`,
+          card.id, user.id, now(), card.id, KRISTAL_CAP
+        );
+        if (res.meta.changes === 1) {
+          const { serial } = await one("SELECT MAX(serial) AS serial FROM prints WHERE card_id = ? AND user_id = ?", card.id, user.id);
+          cards.push({ key, serial });
+        } else cards.push({ key: keyOf(card.id, "prisma") }); // uitverkocht: wordt Prisma
+      }
       await db.batch(
-        cards.map((id) =>
+        cards.map(({ key: id }) =>
           db.prepare("INSERT INTO collection (user_id, card_id, count) VALUES (?, ?, 1) ON CONFLICT (user_id, card_id) DO UPDATE SET count = count + 1").bind(user.id, id)
         )
       );
@@ -169,11 +195,14 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
     },
 
     "POST /api/trades": async (_req, body, user) => {
-      const give = CARD_BY_ID.get(body.give);
-      const want = CARD_BY_ID.get(body.want);
-      if (!give || !want) return fail(400, "Onbekende kaart.");
-      if (give.id === want.id) return fail(400, "Kies twee verschillende kaarten.");
-      if (give.rarity !== want.rarity) return fail(400, "Je kunt alleen kaarten van dezelfde zeldzaamheid ruilen.");
+      const g = parseKey(body.give);
+      const w = parseKey(body.want);
+      if (!g || !w) return fail(400, "Onbekende kaart.");
+      if (!VARIANTS[g.variant].tradeable || !VARIANTS[w.variant].tradeable) return fail(400, "Kluiskaarten (Goudfolie, Prisma, Oerkristal) zijn niet ruilbaar.");
+      if (g.card.id === w.card.id && g.variant === w.variant) return fail(400, "Kies twee verschillende kaarten.");
+      if (g.card.rarity !== w.card.rarity || g.variant !== w.variant) return fail(400, "Je kunt alleen kaarten met dezelfde zeldzaamheid en afwerking ruilen.");
+      const give = { id: keyOf(g.card.id, g.variant) };
+      const want = { id: keyOf(w.card.id, w.variant) };
       const to = await one("SELECT id FROM users WHERE username = ?", String(body.to || "").trim());
       if (!to) return fail(404, "Die speler bestaat niet.");
       if (to.id === user.id) return fail(400, "Je kunt niet met jezelf ruilen.");

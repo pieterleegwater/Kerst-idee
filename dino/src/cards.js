@@ -134,12 +134,58 @@ export function drawPack(random) {
     }
     return last ? "zilver" : "brons";
   };
-  return Array.from({ length: PACK_SIZE }, (_, i) => pick(BY_RARITY[rollRarity(i === PACK_SIZE - 1)]).id);
+  return Array.from({ length: PACK_SIZE }, (_, i) => {
+    const card = pick(BY_RARITY[rollRarity(i === PACK_SIZE - 1)]);
+    return keyOf(card.id, rollVariant(random));
+  });
 }
+
+// ---------- Afwerkingen ----------
+// Elke kaart kan in een zeldzamere afwerking vallen, los van de zeldzaamheid van de dino zelf.
+// Kluiskaarten (Goudfolie, Prisma, Oerkristal) zijn niet ruilbaar: zo ontstaat er geen handel in.
+export const VARIANTS = {
+  normaal: { label: "Normaal", odds: 0, mult: 1, tradeable: true },
+  holo: { label: "Holo", odds: 0.08, mult: 3, tradeable: true },
+  goud: { label: "Goudfolie", odds: 0.015, mult: 10, tradeable: false },
+  prisma: { label: "Prisma", odds: 0.003, mult: 40, tradeable: false },
+  kristal: { label: "Oerkristal", odds: 0.0002, mult: 250, tradeable: false },
+};
+export const VARIANT_ORDER = ["kristal", "prisma", "goud", "holo", "normaal"];
+VARIANTS.normaal.odds = 1 - VARIANT_ORDER.slice(0, 4).reduce((s, k) => s + VARIANTS[k].odds, 0);
+
+// Van elke dino bestaan wereldwijd maar zoveel Oerkristal-exemplaren, genummerd.
+export const KRISTAL_CAP = 25;
+
+// Verzamelwaarde in punten (geen geld): zeldzaamheid × afwerking.
+export const RARITY_POINTS = { brons: 1, zilver: 3, goud: 10, icoon: 40 };
+
+export function rollVariant(random) {
+  let r = random();
+  for (const k of VARIANT_ORDER.slice(0, 4)) {
+    if (r < VARIANTS[k].odds) return k;
+    r -= VARIANTS[k].odds;
+  }
+  return "normaal";
+}
+
+// Een collectie-sleutel is "kaart-id" of "kaart-id:afwerking".
+export const keyOf = (cardId, variant = "normaal") => (variant === "normaal" ? cardId : `${cardId}:${variant}`);
+export function parseKey(key) {
+  const [id, variant = "normaal"] = String(key).split(":");
+  const card = CARD_BY_ID.get(id);
+  return card && VARIANTS[variant] ? { card, variant } : null;
+}
+export const pointsOf = (key) => {
+  const p = parseKey(key);
+  return p ? RARITY_POINTS[p.card.rarity] * VARIANTS[p.variant].mult : 0;
+};
 
 export const PUBLISHED_ODDS = {
   perKaart: Object.fromEntries(Object.entries(RARITIES).map(([k, v]) => [k, v.odds])),
   laatsteKaart: LAST_CARD_ODDS,
+  get afwerking() {
+    return Object.fromEntries(Object.entries(VARIANTS).map(([k, v]) => [k, v.odds]));
+  },
 };
 
 export function cryptoRandom() {
