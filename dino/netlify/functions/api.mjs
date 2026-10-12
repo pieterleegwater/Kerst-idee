@@ -19,6 +19,8 @@ export default async (request) => {
   app ??= createApp({
     db: pgDatabase(supabasePool()),
     mollie: process.env.MOLLIE_API_KEY ? createMollie(process.env.MOLLIE_API_KEY) : null,
+    // Optioneel: eigen geheime waarde zodat IP-hashes niet terug te rekenen zijn.
+    ipSalt: process.env.IP_SALT || process.env.SUPABASE_DB_URL || undefined,
   });
   return app(request);
 };

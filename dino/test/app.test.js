@@ -15,11 +15,12 @@ function setup({ mollie = null, random } = {}) {
   const app = createApp({ db, mollie, now: () => clock, ...(random ? { random } : {}) });
   const client = () => {
     let cookie = "";
+    const ip = `10.0.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`; // elke testclient een eigen netwerk
     const call = async (method, path, body, headers = {}) => {
       const res = await app(
         new Request(BASE + path, {
           method,
-          headers: { ...(body !== undefined ? { "Content-Type": "application/json" } : {}), Cookie: cookie, ...headers },
+          headers: { ...(body !== undefined ? { "Content-Type": "application/json" } : {}), Cookie: cookie, "x-nf-client-connection-ip": ip, ...headers },
           body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body),
         })
       );
@@ -207,4 +208,30 @@ test("Oerkristal: genummerd, maximaal KRISTAL_CAP per dino, daarna Prisma", asyn
   assert.equal(me.prints.length, KRISTAL_CAP);
   assert.ok(me.value > 0);
   assert.equal((await a("GET", "/api/kristal")).body.found[parseKey(keys[0]).card.id], KRISTAL_CAP);
+});
+
+test("accounts: maximaal 3 per netwerk per dag, bots met het verborgen veld geweigerd", async () => {
+  const { client, tick } = setup();
+  const sameNet = { "x-nf-client-connection-ip": "203.0.113.7" };
+  const reg = (name, extra = {}) => client()("POST", "/api/register", { username: name, password: "geheim123", adult: true, ...extra }, sameNet);
+  assert.equal((await reg("bot1", { website: "http://spam.example" })).status, 400);
+  for (const n of ["een", "twee", "drie"]) assert.equal((await reg(n)).status, 201);
+  const vierde = await reg("vier");
+  assert.equal(vierde.status, 429);
+  assert.match(vierde.body.error, /dit netwerk/);
+  // Ander netwerk mag wel
+  assert.equal((await client()("POST", "/api/register", { username: "anders", password: "geheim123", adult: true }, { "x-nf-client-connection-ip": "198.51.100.9" })).status, 201);
+  // Na 24 uur weer ruimte
+  tick(24 * HOUR + 1);
+  assert.equal((await reg("vier")).status, 201);
+});
+
+test("accounts: maximaal 60 per uur voor de hele site", async () => {
+  const { client } = setup();
+  for (let i = 0; i < RULES.accountsPerHourTotal; i++) {
+    const r = await client()("POST", "/api/register", { username: `speler${i}`, password: "geheim123", adult: true }, { "x-nf-client-connection-ip": `192.0.2.${i}` });
+    assert.equal(r.status, 201, `account ${i}`);
+  }
+  const r = await client()("POST", "/api/register", { username: "teveel", password: "geheim123", adult: true }, { "x-nf-client-connection-ip": "192.0.2.250" });
+  assert.equal(r.status, 429);
 });

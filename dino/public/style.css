@@ -314,3 +314,6 @@ table.odds td, table.odds th { border-bottom: 1px solid var(--line); padding: 8p
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Onzichtbaar veld tegen bots */
+.hp { position: absolute !important; left: -9999px !important; width: 1px; height: 1px; opacity: 0; }

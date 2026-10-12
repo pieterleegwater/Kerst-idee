@@ -50,9 +50,17 @@ CREATE TABLE IF NOT EXISTS prints (
 );
 CREATE INDEX IF NOT EXISTS prints_user ON prints (user_id);
 
+CREATE TABLE IF NOT EXISTS registrations (
+  ip_hash TEXT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS registrations_ip ON registrations (ip_hash, created_at);
+CREATE INDEX IF NOT EXISTS registrations_time ON registrations (created_at);
+
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE collection ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE prints ENABLE ROW LEVEL SECURITY;
+ALTER TABLE registrations ENABLE ROW LEVEL SECURITY;
 `;

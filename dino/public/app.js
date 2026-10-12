@@ -247,6 +247,7 @@ function authView() {
       el("input", { id: "u", name: "username", autocomplete: "username", required: true, maxlength: 20 }),
       el("label", { for: "p" }, "Wachtwoord"),
       el("input", { id: "p", name: "password", type: "password", autocomplete: mode === "login" ? "current-password" : "new-password", required: true, minlength: 8 }),
+      mode === "register" ? el("input", { name: "website", class: "hp", tabindex: "-1", autocomplete: "off", "aria-hidden": "true" }) : null,
       mode === "register" ? el("label", { class: "check" }, el("input", { type: "checkbox", name: "adult", required: true }), "Ik ben 18 jaar of ouder en snap dat kaarten geen geldwaarde hebben.") : null,
       err,
       el("button", { class: "btn", type: "submit" }, mode === "register" ? "Start met 2 gratis eieren" : "Inloggen")
@@ -257,7 +258,7 @@ function authView() {
     e.preventDefault();
     const d = new FormData(form);
     try {
-      await api(mode === "register" ? "/api/register" : "/api/login", { username: d.get("username"), password: d.get("password"), adult: d.get("adult") === "on" });
+      await api(mode === "register" ? "/api/register" : "/api/login", { username: d.get("username"), password: d.get("password"), adult: d.get("adult") === "on", website: d.get("website") || "" });
       await refreshMe();
       location.hash = "#/";
       route();

@@ -47,3 +47,11 @@ CREATE TABLE IF NOT EXISTS prints (
   PRIMARY KEY (card_id, serial)
 );
 CREATE INDEX IF NOT EXISTS prints_user ON prints (user_id);
+
+-- Wie wanneer een account aanmaakte, alleen als hash van het IP-adres (geen IP zelf). Na 30 dagen opgeruimd.
+CREATE TABLE IF NOT EXISTS registrations (
+  ip_hash TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS registrations_ip ON registrations (ip_hash, created_at);
+CREATE INDEX IF NOT EXISTS registrations_time ON registrations (created_at);

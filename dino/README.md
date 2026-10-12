@@ -23,6 +23,7 @@ Een virtueel verzamelspel met **eigen dinokaarten**: 96 dino's in 6 rijken (Vulk
 - **Eieren kopen** via **Mollie**: 5 voor €3,99, 12 voor €7,99 of 30 voor €17,99. Gekochte eieren hebben exact dezelfde kansen als gratis eieren, en gratis eieren worden eerst uitgebroed.
 - **Seizoenspas** (€4,99 voor 30 dagen): elke 6 uur een gratis ei en tot 4 opsparen.
 - **Uitgavegrens** van €100 per 30 dagen per account.
+- **Accountlimiet** tegen misbruik van gratis eieren: maximaal 3 nieuwe accounts per netwerk (IP-adres) per 24 uur en 60 per uur voor de hele site, plus een onzichtbaar veld tegen bots. IP-adressen worden alleen als hash bewaard en na 30 dagen gewist. De limieten staan in `RULES` in `src/app.js`.
 - **Fossielen (Hearthstone-model):** versteen kaarten tot 🦴 fossielen (los of "alle dubbele" in één keer) en maak daarmee de dino die je mist, als Normaal of Holo:
 
   | | Gewoon | Zeldzaam | Episch | Legendarisch |

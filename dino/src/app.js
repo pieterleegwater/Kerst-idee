@@ -9,6 +9,9 @@ export const RULES = {
   free: { interval: 12 * HOUR, max: 2 },
   premium: { interval: 6 * HOUR, max: 4 },
   sessionDays: 30,
+  // Tegen massaal accounts aanmaken (bijvoorbeeld voor gratis eieren):
+  accountsPerIpPerDay: 3,
+  accountsPerHourTotal: 60,
   // Bescherming: maximaal zoveel uitgeven per 30 dagen (in centen).
   spendCap30d: 10000,
 };
@@ -39,12 +42,24 @@ export function packState(user, now) {
   return { credits, at, max, premium, nextAt: credits >= max ? null : at + interval };
 }
 
+// IP-adres van de bezoeker. Netlify en Cloudflare zetten hiervoor een eigen header die de bezoeker niet kan vervalsen.
+function clientIp(req) {
+  const h = req.headers;
+  return h.get("x-nf-client-connection-ip") || h.get("cf-connecting-ip") || h.get("x-forwarded-for")?.split(",")[0].trim() || "onbekend";
+}
+
+// We bewaren het IP-adres nooit zelf, alleen een hash ervan (AVG).
+async function hashIp(ip, salt) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${salt}:${ip}`));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 function readCookie(req, name) {
   const match = (req.headers.get("Cookie") || "").match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
   return match ? match[1] : null;
 }
 
-export function createApp({ db, mollie, now = () => Date.now(), random = cryptoRandom }) {
+export function createApp({ db, mollie, now = () => Date.now(), random = cryptoRandom, ipSalt = "dinorijk" }) {
   const demoMode = !mollie;
 
   const one = (sql, ...args) => db.prepare(sql).bind(...args).first();
@@ -127,6 +142,15 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
       if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) return fail(400, "Gebruikersnaam: 3–20 letters, cijfers of _.");
       if (password.length < 8) return fail(400, "Wachtwoord moet minstens 8 tekens zijn.");
       if (body.adult !== true) return fail(400, "Je moet 18 jaar of ouder zijn.");
+      // Onzichtbaar veld: mensen zien het niet, simpele bots vullen het wel in.
+      if (body.website) return fail(400, "Er ging iets mis. Probeer het opnieuw.");
+      const ipHash = await hashIp(clientIp(req), ipSalt);
+      const fromIp = await one("SELECT COUNT(*) AS n FROM registrations WHERE ip_hash = ? AND created_at > ?", ipHash, now() - DAY);
+      if (fromIp.n >= RULES.accountsPerIpPerDay) {
+        return fail(429, `Vanaf dit netwerk zijn vandaag al ${RULES.accountsPerIpPerDay} accounts aangemaakt. Probeer het morgen opnieuw, of log in met je bestaande account.`);
+      }
+      const lastHour = await one("SELECT COUNT(*) AS n FROM registrations WHERE created_at > ?", now() - HOUR);
+      if (lastHour.n >= RULES.accountsPerHourTotal) return fail(429, "Het is even heel druk. Probeer het over een uurtje opnieuw.");
       if (await one("SELECT 1 FROM users WHERE lower(username) = lower(?)", username)) return fail(409, "Die gebruikersnaam is al bezet.");
       const { hash, salt } = await hashPassword(password);
       const id = crypto.randomUUID();
@@ -134,6 +158,7 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
         "INSERT INTO users (id, username, pass_hash, pass_salt, created_at, pack_credits, credits_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         id, username, hash, salt, new Date(now()).toISOString(), RULES.free.max, now()
       );
+      await run("INSERT INTO registrations (ip_hash, created_at) VALUES (?, ?)", ipHash, now());
       return json({ ok: true }, 201, { "Set-Cookie": await startSession(req, id) });
     },
 
