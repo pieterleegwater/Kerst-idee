@@ -17,6 +17,20 @@ CREATE TABLE IF NOT EXISTS users (
   fossils INTEGER NOT NULL DEFAULT 0 CHECK (fossils >= 0)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower ON users (lower(username));
+-- Later toegevoegd: bestaande tabellen krijgen deze kolommen er automatisch bij.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS score INTEGER NOT NULL DEFAULT 0;
+CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users (email);
+CREATE INDEX IF NOT EXISTS users_score ON users (score DESC);
+
+CREATE TABLE IF NOT EXISTS password_resets (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at BIGINT NOT NULL,
+  expires_at BIGINT NOT NULL,
+  used INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS password_resets_user ON password_resets (user_id, created_at);
 
 CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,
@@ -63,4 +77,5 @@ ALTER TABLE collection ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE prints ENABLE ROW LEVEL SECURITY;
 ALTER TABLE registrations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE password_resets ENABLE ROW LEVEL SECURITY;
 `;

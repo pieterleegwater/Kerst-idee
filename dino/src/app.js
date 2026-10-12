@@ -1,5 +1,6 @@
 import { CARDS, GROUPS, GAME_NAME, TYPES, PUBLISHED_ODDS, RARITIES, SEASON, VARIANTS, KRISTAL_CAP, RARITY_POINTS, FOSSILS, drawPack, cryptoRandom, keyOf, parseKey, pointsOf, dustValue, craftCost } from "./cards.js";
 import { hashPassword, randomHex, verifyPassword } from "./auth.js";
+import { createMailer } from "./mail.js";
 import { centsToMollie } from "./mollie.js";
 
 const HOUR = 60 * 60 * 1000;
@@ -12,6 +13,9 @@ export const RULES = {
   // Tegen massaal accounts aanmaken (bijvoorbeeld voor gratis eieren):
   accountsPerIpPerDay: 3,
   accountsPerHourTotal: 60,
+  resetLinkMinutes: 60,
+  resetsPerHour: 3,
+  leaderboardSize: 50,
   // Bescherming: maximaal zoveel uitgeven per 30 dagen (in centen).
   spendCap30d: 10000,
 };
@@ -49,17 +53,22 @@ function clientIp(req) {
 }
 
 // We bewaren het IP-adres nooit zelf, alleen een hash ervan (AVG).
-async function hashIp(ip, salt) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${salt}:${ip}`));
+async function sha256(text) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
+const hashIp = (ip, salt) => sha256(`${salt}:${ip}`);
+
+const normEmail = (e) => String(e || "").trim().toLowerCase();
+const validEmail = (e) => e.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);
+const scoreOf = (keys) => keys.reduce((sum, k) => sum + pointsOf(k), 0);
 
 function readCookie(req, name) {
   const match = (req.headers.get("Cookie") || "").match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
   return match ? match[1] : null;
 }
 
-export function createApp({ db, mollie, now = () => Date.now(), random = cryptoRandom, ipSalt = "dinorijk" }) {
+export function createApp({ db, mollie, mailer = createMailer(), now = () => Date.now(), random = cryptoRandom, ipSalt = "dinorijk" }) {
   const demoMode = !mollie;
 
   const one = (sql, ...args) => db.prepare(sql).bind(...args).first();
@@ -138,7 +147,9 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
 
     "POST /api/register": async (req, body) => {
       const username = String(body.username || "").trim();
+      const email = normEmail(body.email);
       const password = String(body.password || "");
+      if (!validEmail(email)) return fail(400, "Vul een geldig e-mailadres in.");
       if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) return fail(400, "Gebruikersnaam: 3–20 letters, cijfers of _.");
       if (password.length < 8) return fail(400, "Wachtwoord moet minstens 8 tekens zijn.");
       if (body.adult !== true) return fail(400, "Je moet 18 jaar of ouder zijn.");
@@ -152,20 +163,24 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
       const lastHour = await one("SELECT COUNT(*) AS n FROM registrations WHERE created_at > ?", now() - HOUR);
       if (lastHour.n >= RULES.accountsPerHourTotal) return fail(429, "Het is even heel druk. Probeer het over een uurtje opnieuw.");
       if (await one("SELECT 1 FROM users WHERE lower(username) = lower(?)", username)) return fail(409, "Die gebruikersnaam is al bezet.");
+      if (await one("SELECT 1 FROM users WHERE email = ?", email)) return fail(409, "Er bestaat al een account met dit e-mailadres. Log in, of gebruik 'Wachtwoord vergeten'.");
       const { hash, salt } = await hashPassword(password);
       const id = crypto.randomUUID();
       await run(
-        "INSERT INTO users (id, username, pass_hash, pass_salt, created_at, pack_credits, credits_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        id, username, hash, salt, new Date(now()).toISOString(), RULES.free.max, now()
+        "INSERT INTO users (id, username, email, pass_hash, pass_salt, created_at, pack_credits, credits_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        id, username, email, hash, salt, new Date(now()).toISOString(), RULES.free.max, now()
       );
       await run("INSERT INTO registrations (ip_hash, created_at) VALUES (?, ?)", ipHash, now());
       return json({ ok: true }, 201, { "Set-Cookie": await startSession(req, id) });
     },
 
     "POST /api/login": async (req, body) => {
-      const user = await one("SELECT * FROM users WHERE lower(username) = lower(?)", String(body.username || "").trim());
+      const login = String(body.login ?? body.username ?? "").trim();
+      const user = login.includes("@")
+        ? await one("SELECT * FROM users WHERE email = ?", normEmail(login))
+        : await one("SELECT * FROM users WHERE lower(username) = lower(?)", login);
       if (!user || !(await verifyPassword(String(body.password || ""), user.pass_salt, user.pass_hash))) {
-        return fail(401, "Gebruikersnaam of wachtwoord klopt niet.");
+        return fail(401, "E-mail/gebruikersnaam of wachtwoord klopt niet.");
       }
       return json({ ok: true }, 200, { "Set-Cookie": await startSession(req, user.id) });
     },
@@ -174,6 +189,56 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
       const token = readCookie(req, "sid");
       if (token) await run("DELETE FROM sessions WHERE token = ?", token);
       return json({ ok: true }, 200, { "Set-Cookie": "sid=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0" });
+    },
+
+    // Altijd hetzelfde antwoord, zodat niemand kan uitproberen welke e-mailadressen een account hebben.
+    "POST /api/password/forgot": async (req, body) => {
+      const email = normEmail(body.email);
+      const ok = json({ ok: true, message: "Als dit e-mailadres bij een account hoort, sturen we binnen een paar minuten een link." });
+      if (!validEmail(email)) return ok;
+      const user = await one("SELECT id, username FROM users WHERE email = ?", email);
+      if (!user) return ok;
+      const recent = await one("SELECT COUNT(*) AS n FROM password_resets WHERE user_id = ? AND created_at > ?", user.id, now() - HOUR);
+      if (recent.n >= RULES.resetsPerHour) return ok;
+      const token = randomHex(32);
+      await run(
+        "INSERT INTO password_resets (token_hash, user_id, created_at, expires_at, used) VALUES (?, ?, ?, ?, 0)",
+        await sha256(token), user.id, now(), now() + RULES.resetLinkMinutes * 60 * 1000
+      );
+      const link = `${new URL(req.url).origin}/#/reset?token=${token}`;
+      await mailer.send({
+        to: email,
+        subject: `${GAME_NAME}: nieuw wachtwoord instellen`,
+        text: `Hoi ${user.username},\n\nKlik op deze link om een nieuw wachtwoord in te stellen (${RULES.resetLinkMinutes} minuten geldig):\n${link}\n\nHeb je dit niet aangevraagd? Dan kun je deze mail negeren.\n\nGroeten van ${GAME_NAME} 🦖`,
+        html: `<p>Hoi ${user.username},</p><p>Klik op de knop om een nieuw wachtwoord in te stellen. De link is ${RULES.resetLinkMinutes} minuten geldig.</p><p><a href="${link}" style="background:#ffb703;color:#2b1a05;padding:12px 20px;border-radius:99px;text-decoration:none;font-weight:bold">Nieuw wachtwoord instellen</a></p><p style="color:#777">Heb je dit niet aangevraagd? Dan kun je deze mail negeren.</p>`,
+      });
+      return ok;
+    },
+
+    "POST /api/password/reset": async (req, body) => {
+      const token = String(body.token || "");
+      const password = String(body.password || "");
+      if (password.length < 8) return fail(400, "Wachtwoord moet minstens 8 tekens zijn.");
+      const tokenHash = await sha256(token);
+      const reset = await one("SELECT * FROM password_resets WHERE token_hash = ? AND used = 0 AND expires_at > ?", tokenHash, now());
+      if (!reset) return fail(400, "Deze link is verlopen of al gebruikt. Vraag een nieuwe aan.");
+      const claimed = await run("UPDATE password_resets SET used = 1 WHERE token_hash = ? AND used = 0", tokenHash);
+      if (claimed.meta.changes !== 1) return fail(400, "Deze link is verlopen of al gebruikt. Vraag een nieuwe aan.");
+      const { hash, salt } = await hashPassword(password);
+      await run("UPDATE users SET pass_hash = ?, pass_salt = ? WHERE id = ?", hash, salt, reset.user_id);
+      await run("DELETE FROM sessions WHERE user_id = ?", reset.user_id); // overal uitloggen
+      return json({ ok: true }, 200, { "Set-Cookie": await startSession(req, reset.user_id) });
+    },
+
+    "GET /api/leaderboard": async (req) => {
+      const rows = await all("SELECT username, score, packs_opened FROM users WHERE score > 0 ORDER BY score DESC, created_at ASC LIMIT ?", RULES.leaderboardSize);
+      let mine = null;
+      const user = await currentUser(req);
+      if (user) {
+        const ahead = await one("SELECT COUNT(*) AS n FROM users WHERE score > ?", user.score);
+        mine = { username: user.username, score: user.score, rank: ahead.n + 1 };
+      }
+      return json({ top: rows.map((r, i) => ({ rank: i + 1, username: r.username, score: r.score, eggs: r.packs_opened })), mine });
     },
 
     "GET /api/kristal": async () => {
@@ -197,17 +262,31 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
       const rows = await all("SELECT card_id, count FROM collection WHERE user_id = ?", user.id);
       const prints = await all("SELECT card_id, serial FROM prints WHERE user_id = ? ORDER BY created_at", user.id);
       const spent = await spentLast30d(user.id);
+      const value = rows.reduce((sum, r) => sum + pointsOf(r.card_id) * r.count, 0);
+      if (value !== user.score) await run("UPDATE users SET score = ? WHERE id = ?", value, user.id); // ranglijst bijwerken
       return json({
         username: user.username,
+        email: user.email || null,
         packs: { available: pack.credits, max: pack.max, nextAt: pack.nextAt, bought: user.bought_eggs },
         premiumUntil: user.premium_until > now() ? user.premium_until : null,
         packsOpened: user.packs_opened,
         fossils: user.fossils,
         collection: Object.fromEntries(rows.map((r) => [r.card_id, r.count])),
         prints: prints.map((p) => ({ cardId: p.card_id, serial: p.serial })),
-        value: rows.reduce((sum, r) => sum + pointsOf(r.card_id) * r.count, 0),
+        value,
         spendLeft: Math.max(0, RULES.spendCap30d - spent),
       });
+    },
+
+    // E-mailadres toevoegen of wijzigen (vraagt je huidige wachtwoord).
+    "POST /api/account/email": async (_req, body, user) => {
+      const email = normEmail(body.email);
+      if (!validEmail(email)) return fail(400, "Vul een geldig e-mailadres in.");
+      if (!(await verifyPassword(String(body.password || ""), user.pass_salt, user.pass_hash))) return fail(401, "Je wachtwoord klopt niet.");
+      const taken = await one("SELECT id FROM users WHERE email = ? AND id != ?", email, user.id);
+      if (taken) return fail(409, "Dit e-mailadres hoort al bij een ander account.");
+      await run("UPDATE users SET email = ? WHERE id = ?", email, user.id);
+      return json({ ok: true, email });
     },
 
     // Gratis eieren gaan eerst; daarna de gekochte.
@@ -245,7 +324,10 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
           cards.push({ key, serial });
         } else cards.push({ key: keyOf(card.id, "prisma") }); // uitverkocht: wordt Prisma
       }
-      await db.batch(cards.map(({ key }) => addCard(user.id, key)));
+      await db.batch([
+        ...cards.map(({ key }) => addCard(user.id, key)),
+        db.prepare("UPDATE users SET score = score + ? WHERE id = ?").bind(scoreOf(cards.map((c) => c.key)), user.id),
+      ]);
       return json({ cards });
     },
 
@@ -259,7 +341,7 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
       const owned = (await one("SELECT count FROM collection WHERE user_id = ? AND card_id = ?", user.id, body.key))?.count || 0;
       if (n < 1 || n > owned) return fail(400, "Zoveel heb je er niet.");
       if (!(await takeCards(user.id, body.key, n, owned))) return fail(409, "Probeer het nog eens.");
-      await run("UPDATE users SET fossils = fossils + ? WHERE id = ?", per * n, user.id);
+      await run("UPDATE users SET fossils = fossils + ?, score = score - ? WHERE id = ?", per * n, pointsOf(body.key) * n, user.id);
       return json({ gained: per * n });
     },
 
@@ -267,13 +349,17 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
     "POST /api/fossils/dust-dupes": async (_req, _body, user) => {
       const rows = await all("SELECT card_id, count FROM collection WHERE user_id = ? AND count > 1", user.id);
       let gained = 0;
+      let lost = 0;
       for (const r of rows) {
         const p = parseKey(r.card_id);
         const per = p && dustValue(p.card, p.variant);
         if (per == null) continue;
-        if (await takeCards(user.id, r.card_id, r.count - 1, r.count)) gained += per * (r.count - 1);
+        if (await takeCards(user.id, r.card_id, r.count - 1, r.count)) {
+          gained += per * (r.count - 1);
+          lost += pointsOf(r.card_id) * (r.count - 1);
+        }
       }
-      if (gained) await run("UPDATE users SET fossils = fossils + ? WHERE id = ?", gained, user.id);
+      if (gained) await run("UPDATE users SET fossils = fossils + ?, score = score - ? WHERE id = ?", gained, lost, user.id);
       return json({ gained });
     },
 
@@ -285,7 +371,8 @@ export function createApp({ db, mollie, now = () => Date.now(), random = cryptoR
       if (cost == null) return fail(400, "Goudfolie, Prisma en Oerkristal vind je alleen in eieren.");
       const res = await run("UPDATE users SET fossils = fossils - ? WHERE id = ? AND fossils >= ?", cost, user.id, cost);
       if (res.meta.changes !== 1) return fail(400, `Je hebt ${cost} fossielen nodig.`);
-      await addCard(user.id, keyOf(parsed.card.id, parsed.variant)).run();
+      const key = keyOf(parsed.card.id, parsed.variant);
+      await db.batch([addCard(user.id, key), db.prepare("UPDATE users SET score = score + ? WHERE id = ?").bind(pointsOf(key), user.id)]);
       return json({ ok: true, cost });
     },
 

@@ -1,10 +1,11 @@
 import { createApp } from "./app.js";
 import { createMollie } from "./mollie.js";
+import { createMailer } from "./mail.js";
 
 // Cloudflare Worker. public/ wordt als statische site geserveerd; /api/* komt hier binnen.
 export default {
   async fetch(request, env) {
-    const app = createApp({ db: env.DB, mollie: env.MOLLIE_API_KEY ? createMollie(env.MOLLIE_API_KEY) : null, ipSalt: env.IP_SALT || undefined });
+    const app = createApp({ db: env.DB, mollie: env.MOLLIE_API_KEY ? createMollie(env.MOLLIE_API_KEY) : null, ipSalt: env.IP_SALT || undefined, mailer: createMailer(env.RESEND_API_KEY, env.MAIL_FROM || "DinoRijk <noreply@example.com>") });
     return app(request);
   },
 

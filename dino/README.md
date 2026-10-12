@@ -23,6 +23,8 @@ Een virtueel verzamelspel met **eigen dinokaarten**: 96 dino's in 6 rijken (Vulk
 - **Eieren kopen** via **Mollie**: 5 voor €3,99, 12 voor €7,99 of 30 voor €17,99. Gekochte eieren hebben exact dezelfde kansen als gratis eieren, en gratis eieren worden eerst uitgebroed.
 - **Seizoenspas** (€4,99 voor 30 dagen): elke 6 uur een gratis ei en tot 4 opsparen.
 - **Uitgavegrens** van €100 per 30 dagen per account.
+- **Accounts met e-mail:** aanmelden met gebruikersnaam + e-mail, inloggen met een van beide. **Wachtwoord vergeten** stuurt een resetlink (1 uur geldig, eenmalig, max. 3 per uur). Na een reset wordt het account overal uitgelogd. Bestaande accounts zonder e-mail krijgen een melding om er een toe te voegen.
+- **Ranglijst** (`#/ranglijst`): top 50 op verzamelwaarde, met je eigen plek.
 - **Accountlimiet** tegen misbruik van gratis eieren: maximaal 3 nieuwe accounts per netwerk (IP-adres) per 24 uur en 60 per uur voor de hele site, plus een onzichtbaar veld tegen bots. IP-adressen worden alleen als hash bewaard en na 30 dagen gewist. De limieten staan in `RULES` in `src/app.js`.
 - **Fossielen (Hearthstone-model):** versteen kaarten tot 🦴 fossielen (los of "alle dubbele" in één keer) en maak daarmee de dino die je mist, als Normaal of Holo:
 
@@ -56,6 +58,8 @@ De repo bevat `netlify.toml` (in de hoofdmap), dus Netlify weet zelf dat het om 
 2. **Netlify → Project configuration → Environment variables:**
    - `SUPABASE_DB_URL` = die URI (markeer hem als geheim)
    - `MOLLIE_API_KEY` = eerst `test_...`, later `live_...`. ⚠️ Zonder deze sleutel is eieren kopen gratis (testmodus).
+   - `RESEND_API_KEY` = sleutel van [resend.com](https://resend.com) (gratis tot 3.000 mails/maand), voor "wachtwoord vergeten"-mails. Voeg in Resend je domein toe (bijv. `signal-forge.site`) en zet de DNS-records die Resend geeft.
+   - `MAIL_FROM` (optioneel) = afzender, standaard `DinoRijk <noreply@signal-forge.site>`. Moet bij je geverifieerde domein horen.
 3. **Repo koppelen:** Project configuration → Build & deploy → Link repository → GitHub → `kerst-idee`, branch `claude/kerst-familiespel`.
 4. **Deploys → Trigger deploy.** De tabellen worden bij de eerste aanvraag automatisch aangemaakt.
 

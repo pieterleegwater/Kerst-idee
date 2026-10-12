@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createApp, RULES, packState } from "../src/app.js";
-import { CARDS, BY_RARITY, drawPack, PACK_SIZE, parseKey, KRISTAL_CAP } from "../src/cards.js";
+import { CARDS, BY_RARITY, drawPack, PACK_SIZE, parseKey, KRISTAL_CAP, pointsOf } from "../src/cards.js";
 import { testDb, testPgDb } from "./d1.js";
 
 const makeDb = process.env.DB === "pg" ? testPgDb : testDb;
@@ -12,7 +12,9 @@ const HOUR = 3600 * 1000;
 function setup({ mollie = null, random } = {}) {
   const db = makeDb();
   let clock = Date.UTC(2026, 10, 1);
-  const app = createApp({ db, mollie, now: () => clock, ...(random ? { random } : {}) });
+  const mails = [];
+  const mailer = { configured: true, send: async (m) => mails.push(m) };
+  const app = createApp({ db, mollie, mailer, now: () => clock, ...(random ? { random } : {}) });
   const client = () => {
     let cookie = "";
     const ip = `10.0.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`; // elke testclient een eigen netwerk
@@ -30,11 +32,11 @@ function setup({ mollie = null, random } = {}) {
     };
     return call;
   };
-  return { db, client, tick: (ms) => (clock += ms), now: () => clock };
+  return { db, client, mails, tick: (ms) => (clock += ms), now: () => clock };
 }
 
 async function register(call, username) {
-  const r = await call("POST", "/api/register", { username, password: "geheim123", adult: true });
+  const r = await call("POST", "/api/register", { username, email: `${username}@test.nl`, password: "geheim123", adult: true });
   assert.equal(r.status, 201, JSON.stringify(r.body));
 }
 
@@ -64,12 +66,12 @@ test("pakje: 5 kaarten, laatste minimaal Zilver", () => {
 test("registreren vereist 18+ en unieke naam; inloggen werkt", async () => {
   const { client } = setup();
   const a = client();
-  assert.equal((await a("POST", "/api/register", { username: "jan", password: "geheim123" })).status, 400);
+  assert.equal((await a("POST", "/api/register", { username: "jan", email: "jan@test.nl", password: "geheim123" })).status, 400);
   await register(a, "jan");
-  assert.equal((await client()("POST", "/api/register", { username: "JAN", password: "geheim123", adult: true })).status, 409);
+  assert.equal((await client()("POST", "/api/register", { username: "JAN", email: "jan@test.nl", password: "geheim123", adult: true })).status, 409);
   const b = client();
   assert.equal((await b("POST", "/api/login", { username: "jan", password: "fout-fout" })).status, 401);
-  assert.equal((await b("POST", "/api/login", { username: "jan", password: "geheim123" })).status, 200);
+  assert.equal((await b("POST", "/api/login", { username: "jan", email: "jan@test.nl", password: "geheim123" })).status, 200);
   assert.equal((await b("GET", "/api/me")).body.username, "jan");
   assert.equal((await client()("GET", "/api/me")).status, 401);
 });
@@ -155,7 +157,7 @@ test("uitgavegrens van €100 per 30 dagen", async () => {
   assert.equal((await a("POST", "/api/checkout", { product: "eieren30" })).status, 429);
   assert.equal((await a("POST", "/api/checkout", { product: "eieren5" })).status, 200); // 89,95 + 3,99 past nog
   tick(31 * 24 * HOUR);
-  await a("POST", "/api/login", { username: "grens", password: "geheim123" }); // sessie was verlopen
+  await a("POST", "/api/login", { username: "grens", email: "grens@test.nl", password: "geheim123" }); // sessie was verlopen
   assert.equal((await a("POST", "/api/checkout", { product: "eieren30" })).status, 200);
 });
 
@@ -213,14 +215,14 @@ test("Oerkristal: genummerd, maximaal KRISTAL_CAP per dino, daarna Prisma", asyn
 test("accounts: maximaal 3 per netwerk per dag, bots met het verborgen veld geweigerd", async () => {
   const { client, tick } = setup();
   const sameNet = { "x-nf-client-connection-ip": "203.0.113.7" };
-  const reg = (name, extra = {}) => client()("POST", "/api/register", { username: name, password: "geheim123", adult: true, ...extra }, sameNet);
+  const reg = (name, extra = {}) => client()("POST", "/api/register", { username: name, email: `${name}@test.nl`, password: "geheim123", adult: true, ...extra }, sameNet);
   assert.equal((await reg("bot1", { website: "http://spam.example" })).status, 400);
   for (const n of ["een", "twee", "drie"]) assert.equal((await reg(n)).status, 201);
   const vierde = await reg("vier");
   assert.equal(vierde.status, 429);
   assert.match(vierde.body.error, /dit netwerk/);
   // Ander netwerk mag wel
-  assert.equal((await client()("POST", "/api/register", { username: "anders", password: "geheim123", adult: true }, { "x-nf-client-connection-ip": "198.51.100.9" })).status, 201);
+  assert.equal((await client()("POST", "/api/register", { username: "anders", email: "anders@test.nl", password: "geheim123", adult: true }, { "x-nf-client-connection-ip": "198.51.100.9" })).status, 201);
   // Na 24 uur weer ruimte
   tick(24 * HOUR + 1);
   assert.equal((await reg("vier")).status, 201);
@@ -229,9 +231,85 @@ test("accounts: maximaal 3 per netwerk per dag, bots met het verborgen veld gewe
 test("accounts: maximaal 60 per uur voor de hele site", async () => {
   const { client } = setup();
   for (let i = 0; i < RULES.accountsPerHourTotal; i++) {
-    const r = await client()("POST", "/api/register", { username: `speler${i}`, password: "geheim123", adult: true }, { "x-nf-client-connection-ip": `192.0.2.${i}` });
+    const r = await client()("POST", "/api/register", { username: `speler${i}`, email: `speler${i}@test.nl`, password: "geheim123", adult: true }, { "x-nf-client-connection-ip": `192.0.2.${i}` });
     assert.equal(r.status, 201, `account ${i}`);
   }
-  const r = await client()("POST", "/api/register", { username: "teveel", password: "geheim123", adult: true }, { "x-nf-client-connection-ip": "192.0.2.250" });
+  const r = await client()("POST", "/api/register", { username: "teveel", email: "teveel@test.nl", password: "geheim123", adult: true }, { "x-nf-client-connection-ip": "192.0.2.250" });
   assert.equal(r.status, 429);
+});
+
+test("e-mail: verplicht en uniek, inloggen met e-mail of gebruikersnaam", async () => {
+  const { client } = setup();
+  const a = client();
+  assert.equal((await a("POST", "/api/register", { username: "zonder", password: "geheim123", adult: true })).status, 400);
+  assert.equal((await a("POST", "/api/register", { username: "eva", email: " Eva@Voorbeeld.NL ", password: "geheim123", adult: true })).status, 201);
+  assert.equal((await client()("POST", "/api/register", { username: "eva2", email: "eva@voorbeeld.nl", password: "geheim123", adult: true })).status, 409);
+  assert.equal((await client()("POST", "/api/login", { login: "EVA@voorbeeld.nl", password: "geheim123" })).status, 200);
+  assert.equal((await client()("POST", "/api/login", { login: "eva", password: "geheim123" })).status, 200);
+  assert.equal((await client()("POST", "/api/login", { login: "eva@voorbeeld.nl", password: "fout-fout" })).status, 401);
+  assert.equal((await a("GET", "/api/me")).body.email, "eva@voorbeeld.nl");
+});
+
+test("wachtwoord vergeten: mail met link, eenmalig, verloopt, logt overal uit", async () => {
+  const { client, mails, tick } = setup();
+  const a = client();
+  await register(a, "vergeet");
+  // Onbekend adres: zelfde antwoord, geen mail
+  assert.equal((await client()("POST", "/api/password/forgot", { email: "bestaat@niet.nl" })).status, 200);
+  assert.equal(mails.length, 0);
+  await client()("POST", "/api/password/forgot", { email: "vergeet@test.nl" });
+  assert.equal(mails.length, 1);
+  assert.equal(mails[0].to, "vergeet@test.nl");
+  const token = mails[0].text.match(/token=([0-9a-f]+)/)[1];
+
+  const b = client();
+  assert.equal((await b("POST", "/api/password/reset", { token, password: "kort" })).status, 400);
+  assert.equal((await b("POST", "/api/password/reset", { token, password: "nieuwwachtwoord" })).status, 200);
+  assert.equal((await b("GET", "/api/me")).body.username, "vergeet"); // meteen ingelogd
+  assert.equal((await a("GET", "/api/me")).status, 401); // oude sessie uitgelogd
+  assert.equal((await client()("POST", "/api/password/reset", { token, password: "nogeenkeer1" })).status, 400); // eenmalig
+  assert.equal((await client()("POST", "/api/login", { login: "vergeet", password: "nieuwwachtwoord" })).status, 200);
+
+  // Verlopen link
+  await client()("POST", "/api/password/forgot", { email: "vergeet@test.nl" });
+  const token2 = mails[1].text.match(/token=([0-9a-f]+)/)[1];
+  tick(61 * 60 * 1000);
+  assert.equal((await client()("POST", "/api/password/reset", { token: token2, password: "nieuwwachtwoord2" })).status, 400);
+
+  // Maximaal 3 aanvragen per uur
+  for (let i = 0; i < 5; i++) await client()("POST", "/api/password/forgot", { email: "vergeet@test.nl" });
+  assert.equal(mails.length, 2 + 3);
+});
+
+test("bestaand account kan e-mail toevoegen (met wachtwoord)", async () => {
+  const { db, client } = setup();
+  const a = client();
+  await register(a, "oud");
+  await db.prepare("UPDATE users SET email = NULL WHERE username = ?").bind("oud").run();
+  assert.equal((await a("POST", "/api/account/email", { email: "oud@nieuw.nl", password: "fout-fout" })).status, 401);
+  assert.equal((await a("POST", "/api/account/email", { email: "oud@nieuw.nl", password: "geheim123" })).status, 200);
+  assert.equal((await a("GET", "/api/me")).body.email, "oud@nieuw.nl");
+});
+
+test("ranglijst: hoogste verzamelwaarde bovenaan, eigen plek erbij", async () => {
+  const { db, client } = setup();
+  const [a, b, c] = [client(), client(), client()];
+  await register(a, "klein");
+  await register(b, "groot");
+  await register(c, "midden");
+  await give(db, "klein", BY_RARITY.brons[0].id, 1); // 1 punt
+  await give(db, "groot", `${BY_RARITY.icoon[0].id}:holo`, 1); // 40 × 3 = 120
+  await give(db, "midden", BY_RARITY.goud[0].id, 2); // 2 × 10 = 20
+  for (const x of [a, b, c]) await x("GET", "/api/me"); // score bijwerken
+  const { body } = await a("GET", "/api/leaderboard");
+  assert.deepEqual(body.top.map((r) => [r.rank, r.username, r.score]), [[1, "groot", 120], [2, "midden", 20], [3, "klein", 1]]);
+  assert.deepEqual(body.mine, { username: "klein", score: 1, rank: 3 });
+
+  // Ei openen en verstenen houden de score bij zonder /api/me
+  const before = (await c("GET", "/api/leaderboard")).body.mine.score;
+  await c("POST", "/api/fossils/dust", { key: BY_RARITY.goud[0].id, count: 1 });
+  assert.equal((await c("GET", "/api/leaderboard")).body.mine.score, before - 10);
+  const { body: opened } = await c("POST", "/api/packs/open");
+  const gained = opened.cards.reduce((n, k) => n + pointsOf(k.key), 0);
+  assert.equal((await c("GET", "/api/leaderboard")).body.mine.score, before - 10 + gained);
 });

@@ -4,6 +4,7 @@
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  email TEXT UNIQUE,
   pass_hash TEXT NOT NULL,
   pass_salt TEXT NOT NULL,
   created_at TEXT NOT NULL,
@@ -12,8 +13,20 @@ CREATE TABLE IF NOT EXISTS users (
   premium_until INTEGER NOT NULL DEFAULT 0,
   packs_opened INTEGER NOT NULL DEFAULT 0,
   bought_eggs INTEGER NOT NULL DEFAULT 0 CHECK (bought_eggs >= 0),
-  fossils INTEGER NOT NULL DEFAULT 0 CHECK (fossils >= 0)
+  fossils INTEGER NOT NULL DEFAULT 0 CHECK (fossils >= 0),
+  score INTEGER NOT NULL DEFAULT 0
 );
+CREATE INDEX IF NOT EXISTS users_score ON users (score DESC);
+
+-- Wachtwoord-resetlinks: alleen een hash van de link wordt bewaard.
+CREATE TABLE IF NOT EXISTS password_resets (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  used INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS password_resets_user ON password_resets (user_id, created_at);
 
 CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,

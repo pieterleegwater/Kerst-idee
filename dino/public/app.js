@@ -236,17 +236,26 @@ function authView() {
   const err = el("p", { class: "error", role: "alert" });
   const form = el("form", { class: "panel" });
   const render = () => {
-    form.replaceChildren(
+    put(
+      form,
+      "replaceChildren",
       el(
         "div",
         { class: "tabs" },
         el("button", { type: "button", class: `btn small ${mode === "register" ? "" : "ghost"}`, onclick: () => ((mode = "register"), render()) }, "Nieuw account"),
         el("button", { type: "button", class: `btn small ${mode === "login" ? "" : "ghost"}`, onclick: () => ((mode = "login"), render()) }, "Inloggen")
       ),
-      el("label", { for: "u" }, "Gebruikersnaam"),
-      el("input", { id: "u", name: "username", autocomplete: "username", required: true, maxlength: 20 }),
+      ...(mode === "register"
+        ? [
+            el("label", { for: "u" }, "Gebruikersnaam ", el("span", { class: "muted small" }, "(zichtbaar op de ranglijst)")),
+            el("input", { id: "u", name: "username", autocomplete: "username", required: true, maxlength: 20, pattern: "[A-Za-z0-9_]{3,20}" }),
+            el("label", { for: "e" }, "E-mailadres"),
+            el("input", { id: "e", name: "email", type: "email", autocomplete: "email", required: true, maxlength: 254 }),
+          ]
+        : [el("label", { for: "u" }, "E-mail of gebruikersnaam"), el("input", { id: "u", name: "login", autocomplete: "username", required: true, maxlength: 254 })]),
       el("label", { for: "p" }, "Wachtwoord"),
       el("input", { id: "p", name: "password", type: "password", autocomplete: mode === "login" ? "current-password" : "new-password", required: true, minlength: 8 }),
+      mode === "login" ? el("p", { class: "small" }, el("a", { href: "#/vergeten" }, "Wachtwoord vergeten?")) : null,
       mode === "register" ? el("input", { name: "website", class: "hp", tabindex: "-1", autocomplete: "off", "aria-hidden": "true" }) : null,
       mode === "register" ? el("label", { class: "check" }, el("input", { type: "checkbox", name: "adult", required: true }), "Ik ben 18 jaar of ouder en snap dat kaarten geen geldwaarde hebben.") : null,
       err,
@@ -258,7 +267,12 @@ function authView() {
     e.preventDefault();
     const d = new FormData(form);
     try {
-      await api(mode === "register" ? "/api/register" : "/api/login", { username: d.get("username"), password: d.get("password"), adult: d.get("adult") === "on", website: d.get("website") || "" });
+      await api(
+        mode === "register" ? "/api/register" : "/api/login",
+        mode === "register"
+          ? { username: d.get("username"), email: d.get("email"), password: d.get("password"), adult: d.get("adult") === "on", website: d.get("website") || "" }
+          : { login: d.get("login"), password: d.get("password") }
+      );
       await refreshMe();
       location.hash = "#/";
       route();
@@ -323,6 +337,7 @@ function packsView() {
     put(
       wrap,
       "replaceChildren",
+      emailBanner(),
       el("h1", {}, total ? `${total} ${total > 1 ? "eieren" : "ei"} klaar` : "Even geduld…"),
       bought ? el("p", { class: "muted" }, `${available} gratis + ${bought} gekocht. Gratis eieren worden eerst uitgebroed.`) : null,
       el("p", { class: "muted" }, "Tik op het ei om het uit te broeden. Gloeit een kaart al op de achterkant? Dan zit er iets bijzonders in…"),
@@ -441,6 +456,94 @@ function albumView() {
     filters,
     body
   );
+}
+
+function forgotView() {
+  const msg = el("p", { class: "muted", role: "status" });
+  const input = el("input", { type: "email", name: "email", required: true, autocomplete: "email", placeholder: "jij@voorbeeld.nl" });
+  const btn = el("button", { class: "btn", type: "submit" }, "Stuur resetlink");
+  const form = el("form", { class: "panel narrow" }, el("h1", {}, "Wachtwoord vergeten"), el("p", { class: "muted" }, "Vul het e-mailadres van je account in. We sturen je een link om een nieuw wachtwoord in te stellen."), el("label", {}, "E-mailadres"), input, btn, msg, el("p", { class: "small" }, el("a", { href: "#/" }, "← Terug naar inloggen")));
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    btn.disabled = true;
+    try {
+      const { message } = await api("/api/password/forgot", { email: input.value });
+      msg.textContent = `${message} Kijk ook in je spam.`;
+    } catch (ex) {
+      msg.textContent = ex.message;
+      btn.disabled = false;
+    }
+  });
+  return form;
+}
+
+function resetView(params) {
+  const token = params.get("token") || "";
+  const err = el("p", { class: "error", role: "alert" });
+  const p1 = el("input", { type: "password", required: true, minlength: 8, autocomplete: "new-password" });
+  const p2 = el("input", { type: "password", required: true, minlength: 8, autocomplete: "new-password" });
+  const form = el("form", { class: "panel narrow" }, el("h1", {}, "Nieuw wachtwoord"), el("label", {}, "Nieuw wachtwoord (minstens 8 tekens)"), p1, el("label", {}, "Nog een keer"), p2, err, el("button", { class: "btn", type: "submit" }, "Opslaan en inloggen"));
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (p1.value !== p2.value) return (err.textContent = "De wachtwoorden zijn niet hetzelfde.");
+    try {
+      await api("/api/password/reset", { token, password: p1.value });
+      await refreshMe();
+      toast("Wachtwoord gewijzigd. Je bent ingelogd!");
+      location.hash = "#/";
+    } catch (ex) {
+      err.textContent = ex.message;
+    }
+  });
+  return form;
+}
+
+async function leaderboardView() {
+  const { top, mine } = await api("/api/leaderboard");
+  const medal = (r) => ["🥇", "🥈", "🥉"][r - 1] || `#${r}`;
+  const rows = top.map((r) =>
+    el(
+      "tr",
+      { class: mine && r.username === mine.username ? "me" : "" },
+      el("td", { class: "rank" }, medal(r.rank)),
+      el("td", {}, el("b", {}, r.username)),
+      el("td", { class: "num" }, `${r.score.toLocaleString("nl-NL")} pt`),
+      el("td", { class: "num muted" }, `${r.eggs} 🥚`)
+    )
+  );
+  const inTop = mine && top.some((r) => r.username === mine.username);
+  return el(
+    "div",
+    {},
+    el("h1", {}, "Ranglijst"),
+    el("p", { class: "muted" }, "De verzamelaars met de hoogste verzamelwaarde. Zeldzame dino's en glanskaarten tellen veel zwaarder: een Legendarische Oerkristal is 10.000 punten waard."),
+    mine ? el("div", { class: "panel myrank" }, el("span", {}, "Jouw plek"), el("b", {}, `#${mine.rank}`), el("span", {}, `${mine.score.toLocaleString("nl-NL")} punten`)) : el("p", {}, el("a", { href: "#/" }, "Maak een account en doe mee →")),
+    el("br"),
+    top.length
+      ? el("div", { class: "panel" }, el("table", { class: "board" }, el("tr", {}, el("th", {}, ""), el("th", {}, "Verzamelaar"), el("th", { class: "num" }, "Waarde"), el("th", { class: "num" }, "Eieren")), rows))
+      : el("p", { class: "muted" }, "Nog niemand op de ranglijst. Broed een ei uit en sta bovenaan!"),
+    mine && !inTop && top.length ? el("p", { class: "muted" }, `Jij staat op plek ${mine.rank}. Nog ${(top[top.length - 1].score - mine.score + 1).toLocaleString("nl-NL")} punten tot de top ${top.length}.`) : null
+  );
+}
+
+// Voor accounts van vóór de e-mail: adres toevoegen zodat wachtwoord vergeten werkt.
+function emailBanner() {
+  if (me.email) return null;
+  const email = el("input", { type: "email", placeholder: "jij@voorbeeld.nl", required: true });
+  const pw = el("input", { type: "password", placeholder: "Je huidige wachtwoord", required: true });
+  const form = el("form", { class: "panel banner" }, el("b", {}, "📧 Voeg je e-mailadres toe"), el("span", { class: "muted small" }, "Dan kun je inloggen met je e-mail en je wachtwoord herstellen als je het vergeet."), el("div", { class: "row" }, email, pw, el("button", { class: "btn small", type: "submit" }, "Opslaan")));
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api("/api/account/email", { email: email.value, password: pw.value });
+      await refreshMe();
+      toast("E-mailadres opgeslagen ✓");
+      form.remove();
+    } catch (ex) {
+      toast(ex.message);
+    }
+  });
+  return form;
 }
 
 function fossilsView() {
@@ -640,6 +743,9 @@ async function route(keepOverlay) {
   try {
     let node;
     if (path === "/regels") node = rulesView();
+    else if (path === "/ranglijst") node = await leaderboardView();
+    else if (path === "/reset") node = resetView(params);
+    else if (path === "/vergeten") node = forgotView();
     else if (!me) node = authView();
     else if (path === "/album") node = albumView();
     else if (path === "/fossielen") node = fossilsView();

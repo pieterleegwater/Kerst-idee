@@ -317,3 +317,17 @@ table.odds td, table.odds th { border-bottom: 1px solid var(--line); padding: 8p
 
 /* Onzichtbaar veld tegen bots */
 .hp { position: absolute !important; left: -9999px !important; width: 1px; height: 1px; opacity: 0; }
+
+/* =================== ACCOUNT & RANGLIJST =================== */
+.panel.narrow { max-width: 460px; margin: 20px auto; }
+.banner { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; text-align: left; border-color: var(--accent); }
+.banner .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.banner .row input { flex: 1; min-width: 160px; margin: 0; }
+.myrank { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; border-color: var(--accent); }
+.myrank b { font: 700 2.2rem "Oswald"; color: var(--accent); }
+table.board { width: 100%; border-collapse: collapse; }
+table.board th, table.board td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+table.board .num { text-align: right; white-space: nowrap; }
+table.board .rank { width: 3.2em; font-size: 1.3rem; }
+table.board tr:nth-child(2) td { font-size: 1.1rem; }
+table.board tr.me td { background: rgba(255, 183, 3, .12); }
