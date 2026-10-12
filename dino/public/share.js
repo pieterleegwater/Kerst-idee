@@ -17,7 +17,7 @@ const VARIANT_FRAMES = {
 };
 const TIER_COLORS = { brons: "#f3c79b", zilver: "#e3e8ec", goud: "#ffd166", icoon: "#f0b3ff" };
 
-// Plaatjes in de SVG inline zetten: een SVG die als afbeelding wordt getekend mag zelf niets ophalen.
+// Plaatjes (WebP) in de SVG inline zetten: een SVG die als afbeelding wordt getekend mag zelf niets ophalen.
 async function inlineImages(svg) {
   const hrefs = [...new Set([...svg.matchAll(/href="(\/img\/[^"]+)"/g)].map((m) => m[1]))];
   for (const href of hrefs) {

@@ -54,3 +54,7 @@ centered, isolated on a plain flat light grey background, no scenery, no text, n
   - Maanvorst **Raptor**: *"…on a rock under a giant full moon at night"*
 
   Ze staan in de site als `public/img/dino/legend-<naam>.jpg` (rex, titan, brachio, mosa, quetzal, raptor). Welk deel van de scène op een gewone kaart zichtbaar is, stel je in met `LEGEND_FOCUS` in `public/art.js`.
+
+## Scherpte
+Gemini levert kleine rasters (ongeveer 200 px per dino). Daarom worden ze eerst 4× vergroot met de AI-upscaler Real-ESRGAN
+(`tools/upscale_esrgan.py`) en daarna geknipt met `tools/slice_grid.py`. Nog scherper: laat Gemini de rijen los maken in hoge resolutie.

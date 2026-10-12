@@ -1,7 +1,7 @@
 // Tekent elke dino als SVG op basis van soort, rijk en een vast "look"-getal.
 // Geen plaatjes van anderen: alles wordt hier gegenereerd.
 
-// Echte plaatjes (public/img/dino/<naam>.png) die beschikbaar zijn; anders tekenen we de dino zelf.
+// Echte plaatjes (public/img/dino/<naam>.webp) die beschikbaar zijn; anders tekenen we de dino zelf.
 let IMAGES = new Set();
 export function setDinoImages(names) {
   IMAGES = new Set(names);
@@ -11,14 +11,14 @@ export function setDinoImages(names) {
 function imageDino(card) {
   const box = card.type === "ptero" ? [4, 4, 112, 70, "xMidYMid meet"] : card.type === "zee" ? [2, 12, 116, 66, "xMidYMid meet"] : [4, 8, 112, 76, "xMidYMax meet"];
   const [x, y, w, h, fit] = box;
-  return `<image href="/img/dino/${card.art}.png" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="${fit}"/>`;
+  return `<image href="/img/dino/${card.art}.webp" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="${fit}"/>`;
 }
 
-// Legendarische kaarten met een volledige scène (public/img/dino/legend-<naam>.jpg).
+// Legendarische kaarten met een volledige scène (public/img/dino/legend-<naam>.webp).
 // Op gewone kaarten is het beeld breder dan hoog: kies per dino welk deel zichtbaar is (0 = boven, 1 = onder).
 const LEGEND_FOCUS = { rex: 0.45, titan: 0.25, brachio: 0.08, mosa: 0.55, quetzal: 0.4, raptor: 0.5 };
 function legendImage(card, variant) {
-  const href = `/img/dino/legend-${card.art}.jpg`;
+  const href = `/img/dino/legend-${card.art}.webp`;
   if (variant === "prisma" || variant === "kristal") {
     return `<image href="${href}" x="-4" y="-20" width="128" height="128" preserveAspectRatio="xMidYMid slice"/>`;
   }
