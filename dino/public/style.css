@@ -334,3 +334,10 @@ table.board tr.me td { background: rgba(255, 183, 3, .12); }
 
 /* Echte plaatjes: iets meer contrast en een zachte schaduw zodat de dino loskomt van de achtergrond */
 .card .art svg image { filter: drop-shadow(0 1.5px 2px rgba(0, 0, 0, .55)) contrast(1.06) saturate(1.08); }
+
+/* =================== DELEN =================== */
+.share-box { max-width: 760px; align-items: flex-start; }
+.share-preview { width: 260px; flex: none; }
+.share-preview img { width: 100%; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.6); display: block; }
+.share-actions { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; margin-top: 10px; }
+@media (max-width: 640px) { .share-preview { width: 70%; margin: 0 auto; } }

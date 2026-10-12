@@ -1,4 +1,5 @@
 import { dinoSvg, setDinoImages } from "./art.js";
+import { renderShareImage, shareBlob, downloadBlob } from "./share.js";
 
 const view = document.getElementById("view");
 const nav = document.getElementById("nav");
@@ -156,6 +157,57 @@ function fossilActions(card, variant, after) {
   return box;
 }
 
+// Deelvenster: maakt een Story-plaatje van de kaart; op de telefoon via het deelmenu naar Instagram/TikTok.
+async function showShare(card, variant = "normaal", serial = null) {
+  const group = groupOf(card.group);
+  const close = () => overlay.remove();
+  const preview = el("div", { class: "share-preview" }, el("p", { class: "muted" }, "Plaatje maken…"));
+  const actions = el("div", { class: "share-actions" });
+  const overlay = el("div", { class: "overlay share", onclick: (e) => e.target === overlay && close() }, el("div", { class: "detail share-box" }, preview, el("div", {}, el("h2", {}, "Deel je kaart"), el("p", { class: "muted" }, "Laat zien wat je hebt gevangen! Het plaatje heeft precies het formaat van een Instagram- of TikTok-verhaal."), actions)));
+  document.body.append(overlay);
+  const fileName = `dinorijk-${card.art}-${variant}.png`;
+  const label = variant !== "normaal" ? `${catalog.variants[variant].label} ` : "";
+  const text = `Ik heb ${label}${card.name} gevangen in DinoRijk! 🦖 Kun jij hem ook vangen? ${location.origin}`;
+  try {
+    const blob = await renderShareImage({ card, group, variant, serial, catalog });
+    const img = el("img", { alt: `Deelplaatje van ${card.name}` });
+    img.src = URL.createObjectURL(blob);
+    preview.replaceChildren(img);
+    const canShareFiles = navigator.canShare?.({ files: [new File([blob], fileName, { type: "image/png" })] });
+    put(
+      actions,
+      "replaceChildren",
+      canShareFiles
+        ? el("button", { class: "btn", onclick: async () => {
+            const res = await shareBlob(blob, { fileName, text });
+            if (res === "unsupported") downloadBlob(blob, fileName), toast("Plaatje opgeslagen. Upload het in Instagram of TikTok.");
+          } }, "📲 Delen op Instagram / TikTok")
+        : null,
+      el("button", { class: `btn${canShareFiles ? " ghost" : ""}`, onclick: () => (downloadBlob(blob, fileName), toast("Plaatje opgeslagen!")) }, "⬇️ Download plaatje"),
+      el("button", { class: "btn ghost", onclick: async () => {
+          try {
+            await navigator.clipboard.writeText(text);
+            toast("Tekst met link gekopieerd!");
+          } catch {
+            toast(text);
+          }
+        } }, "🔗 Kopieer tekst + link"),
+      el(
+        "p",
+        { class: "muted small" },
+        canShareFiles
+          ? "Kies in het deelmenu Instagram (Verhaal of Bericht) of TikTok."
+          : "Op je telefoon kun je direct delen. Op de computer: download het plaatje en upload het in Instagram of TikTok."
+      ),
+      el("button", { class: "btn ghost", onclick: close }, "Sluiten")
+    );
+  } catch (err) {
+    console.error(err);
+    preview.replaceChildren(el("p", { class: "error" }, "Het plaatje maken lukte niet. Probeer het nog eens."));
+    actions.replaceChildren(el("button", { class: "btn ghost", onclick: close }, "Sluiten"));
+  }
+}
+
 function showDetail(card) {
   const group = groupOf(card.group);
   const variants = ownedVariants(card.id);
@@ -186,6 +238,7 @@ function showDetail(card) {
       ),
       serials.length ? el("p", {}, `Jouw serienummers: ${serials.map((s) => `#${String(s).padStart(2, "0")}`).join(", ")}`) : null,
       kristal,
+      el("button", { class: "btn", onclick: () => showShare(card, current, current === "kristal" ? serialsOf(card.id)[0] : null) }, "📲 Delen"),
       fossilActions(card, current, () => {
         const left = ownedVariants(card.id);
         if (!left.length) return close(), route();
@@ -381,6 +434,14 @@ function packsView() {
         "p",
         {},
         el("button", { class: "btn ghost", onclick: () => [...row.querySelectorAll(".flip")].forEach((f, i) => setTimeout(f.flip, i * 260)) }, "Alles omdraaien"),
+        " ",
+        el("button", { class: "btn ghost", onclick: () => {
+            const order = { kristal: 0, prisma: 1, goud: 2, holo: 3, normaal: 4 };
+            const rank = { icoon: 0, goud: 1, zilver: 2, brons: 3 };
+            const best = cards.map(({ key, serial }) => ({ ...parseKey(key), serial })).sort((a, b) => order[a.variant] - order[b.variant] || rank[a.card.rarity] - rank[b.card.rarity] || b.card.rating - a.card.rating)[0];
+            row.querySelectorAll(".flip").forEach((f) => f.flip());
+            showShare(best.card, best.variant, best.serial);
+          } }, "📲 Deel je beste kaart"),
         " ",
         el("button", { class: "btn", onclick: render }, "Verder")
       )
