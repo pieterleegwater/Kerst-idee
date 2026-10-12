@@ -157,7 +157,7 @@ label { font-weight: 600; font-size: .92rem; }
 .card.v-prisma .fx {
   background: conic-gradient(from var(--spin) at var(--mx) var(--my), hsla(0,100%,60%,.6), hsla(60,100%,60%,.6), hsla(120,100%,60%,.6), hsla(180,100%,60%,.6), hsla(240,100%,65%,.6), hsla(300,100%,60%,.6), hsla(360,100%,60%,.6)),
     radial-gradient(circle, #fff 0 .7px, transparent 1.2px) 0 0 / 7px 7px;
-  mix-blend-mode: color-dodge; opacity: .5; animation: spin 6s linear infinite;
+  mix-blend-mode: overlay; opacity: .6; animation: spin 6s linear infinite;
 }
 
 /* Oerkristal: zwart-iriserend kristal, genummerd */
@@ -171,7 +171,7 @@ label { font-weight: 600; font-size: .92rem; }
     linear-gradient(115deg, transparent 30%, rgba(125, 249, 255, .55) 45%, rgba(255, 125, 240, .55) 55%, transparent 70%) 0 0 / 250% 250%,
     conic-gradient(from 0deg at 30% 20%, transparent 0 20deg, rgba(255,255,255,.18) 20deg 28deg, transparent 28deg 140deg, rgba(255,255,255,.14) 140deg 150deg, transparent 150deg),
     conic-gradient(from 90deg at 75% 70%, transparent 0 40deg, rgba(255,255,255,.16) 40deg 50deg, transparent 50deg 200deg, rgba(255,255,255,.12) 200deg 212deg, transparent 212deg);
-  mix-blend-mode: screen; opacity: .8; animation: holo 4s ease-in-out infinite alternate;
+  mix-blend-mode: screen; opacity: .5; animation: holo 4s ease-in-out infinite alternate;
 }
 .card.v-kristal.active .fx { animation: none; background-position: var(--mx) var(--my), 0 0, 0 0; }
 .card.v-kristal .rating, .card.v-kristal .name { background: linear-gradient(90deg, #7df9ff, #fff, #ff7df0); -webkit-background-clip: text; background-clip: text; color: transparent; }
@@ -331,3 +331,6 @@ table.board .num { text-align: right; white-space: nowrap; }
 table.board .rank { width: 3.2em; font-size: 1.3rem; }
 table.board tr:nth-child(2) td { font-size: 1.1rem; }
 table.board tr.me td { background: rgba(255, 183, 3, .12); }
+
+/* Echte plaatjes: iets meer contrast en een zachte schaduw zodat de dino loskomt van de achtergrond */
+.card .art svg image { filter: drop-shadow(0 1.5px 2px rgba(0, 0, 0, .55)) contrast(1.06) saturate(1.08); }

@@ -715,7 +715,7 @@ function rulesView() {
       el("li", {}, "Kaarten kun je niet ruilen of verkopen. Je kunt ze verstenen tot fossielen en daarmee een dino naar keuze maken (Normaal of Holo). Met fossielen koop je geen eieren."),
       el("li", {}, `Uitgavegrens: maximaal €${catalog.rules.spendCap30d / 100} per 30 dagen per account.`),
       el("li", {}, "Handel in accounts voor geld is verboden en leidt tot blokkering."),
-      el("li", {}, "De soorten zijn echte prehistorische dieren; namen, rijken, krachten en tekeningen zijn verzonnen. De weetjes op de kaarten kloppen wel!")
+      el("li", {}, "De soorten zijn echte prehistorische dieren; namen, rijken en krachten zijn verzonnen en de afbeeldingen zijn met AI gemaakt. De weetjes op de kaarten kloppen wel!")
     )
   );
 }
