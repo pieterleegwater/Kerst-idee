@@ -655,9 +655,23 @@ async function route(keepOverlay) {
 }
 
 window.addEventListener("hashchange", route);
-catalog = await api("/api/catalog");
-await refreshMe();
-route();
+try {
+  catalog = await api("/api/catalog");
+  await refreshMe();
+  route();
+} catch {
+  // Bijvoorbeeld als de database (nog) niet bereikbaar is: nette melding in plaats van een lege pagina.
+  view.replaceChildren(
+    el(
+      "div",
+      { class: "panel", style: "max-width:560px;margin:40px auto;text-align:center" },
+      el("div", { style: "font-size:3rem" }, "🦖🔧"),
+      el("h2", {}, "Even onderhoud"),
+      el("p", { class: "muted" }, "DinoRijk is zo weer bereikbaar. Probeer het over een paar minuten opnieuw."),
+      el("button", { class: "btn", onclick: () => location.reload() }, "Opnieuw proberen")
+    )
+  );
+}
 
 document.querySelector(".logo").addEventListener("click", () => setTimeout(route));
 document.addEventListener("click", (e) => {
