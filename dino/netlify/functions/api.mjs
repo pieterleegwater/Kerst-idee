@@ -22,7 +22,7 @@ export default async (request) => {
     mollie: process.env.MOLLIE_API_KEY ? createMollie(process.env.MOLLIE_API_KEY) : null,
     // Optioneel: eigen geheime waarde zodat IP-hashes niet terug te rekenen zijn.
     ipSalt: process.env.IP_SALT || process.env.SUPABASE_DB_URL || undefined,
-    mailer: createMailer(process.env.RESEND_API_KEY, process.env.MAIL_FROM || "DinoRijk <noreply@signal-forge.site>"),
+    mailer: createMailer(process.env.RESEND_API_KEY, process.env.MAIL_FROM || "DinoRijk <noreply@dinorijk.live>"),
   });
   return app(request);
 };

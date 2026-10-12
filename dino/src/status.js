@@ -8,7 +8,7 @@ export async function statusResponse() {
   const status = {
     site: process.env.URL || null,
     mollie: key.startsWith("live_") ? "live (echte betalingen)" : key.startsWith("test_") ? "test (Mollie testbetalingen)" : "uit: demo-modus, kopen is gratis!",
-    mail: process.env.RESEND_API_KEY ? `aan, afzender ${process.env.MAIL_FROM || "DinoRijk <noreply@signal-forge.site>"}` : "uit: wachtwoord-vergeten-mails worden niet verstuurd (RESEND_API_KEY ontbreekt)",
+    mail: process.env.RESEND_API_KEY ? `aan, afzender ${process.env.MAIL_FROM || "DinoRijk <noreply@dinorijk.live>"}` : "uit: wachtwoord-vergeten-mails worden niet verstuurd (RESEND_API_KEY ontbreekt)",
     database: { gekoppeld: false },
   };
   if (!url) {

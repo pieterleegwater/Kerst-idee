@@ -58,8 +58,8 @@ De repo bevat `netlify.toml` (in de hoofdmap), dus Netlify weet zelf dat het om 
 2. **Netlify → Project configuration → Environment variables:**
    - `SUPABASE_DB_URL` = die URI (markeer hem als geheim)
    - `MOLLIE_API_KEY` = eerst `test_...`, later `live_...`. ⚠️ Zonder deze sleutel is eieren kopen gratis (testmodus).
-   - `RESEND_API_KEY` = sleutel van [resend.com](https://resend.com) (gratis tot 3.000 mails/maand), voor "wachtwoord vergeten"-mails. Voeg in Resend je domein toe (bijv. `signal-forge.site`) en zet de DNS-records die Resend geeft.
-   - `MAIL_FROM` (optioneel) = afzender, standaard `DinoRijk <noreply@signal-forge.site>`. Moet bij je geverifieerde domein horen.
+   - `RESEND_API_KEY` = sleutel van [resend.com](https://resend.com) (gratis tot 3.000 mails/maand), voor "wachtwoord vergeten"-mails. Voeg in Resend je domein toe (bijv. `dinorijk.live`) en zet de DNS-records die Resend geeft.
+   - `MAIL_FROM` (optioneel) = afzender, standaard `DinoRijk <noreply@dinorijk.live>`. Moet bij je geverifieerde domein horen.
 3. **Repo koppelen:** Project configuration → Build & deploy → Link repository → GitHub → `kerst-idee`, branch `claude/kerst-familiespel`.
 4. **Deploys → Trigger deploy.** De tabellen worden bij de eerste aanvraag automatisch aangemaakt.
 
