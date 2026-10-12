@@ -1,6 +1,7 @@
 import { dinoSvg, setDinoImages } from "./art.js";
 import { renderShareImage, shareBlob, downloadBlob } from "./share.js";
 import { privacyHtml, termsHtml } from "./legal.js";
+import { startShake, hatch, deal, bestTier, crumble, bonesToBank, forge } from "./fx.js";
 
 const view = document.getElementById("view");
 const nav = document.getElementById("nav");
@@ -136,23 +137,31 @@ function fossilActions(card, variant, after) {
   const owned = me.collection[key] || 0;
   const per = dustOf(card, variant);
   const box = el("div", { class: "factions" });
-  const act = async (path, body, msg) => {
+  const holder = () => box.closest(".detail")?.querySelector(".big");
+  const act = async (path, body, msg, fx) => {
+    if (box.classList.contains("busy")) return;
+    box.classList.add("busy");
+    const fossilsBefore = me.fossils;
     try {
       const res = await api(path, body);
+      await fx?.(res, fossilsBefore);
       await refreshMe();
       toast(msg(res));
       after();
     } catch (ex) {
       toast(ex.message);
+    } finally {
+      box.classList.remove("busy");
     }
   };
+  const dustFx = (r, before) => crumble(holder()?.querySelector(".card"), r.gained, before);
   if (per != null && owned) {
-    box.append(el("button", { class: "btn small ghost", onclick: () => act("/api/fossils/dust", { key, count: 1 }, (r) => `+${r.gained} 🦴`) }, `Versteen 1 (+${per} 🦴)`));
-    if (owned > 1) box.append(el("button", { class: "btn small ghost", onclick: () => act("/api/fossils/dust", { key, count: owned - 1 }, (r) => `+${r.gained} 🦴`) }, `Versteen ${owned - 1} dubbele (+${per * (owned - 1)} 🦴)`));
+    box.append(el("button", { class: "btn small ghost", onclick: () => act("/api/fossils/dust", { key, count: 1 }, (r) => `+${r.gained} 🦴`, dustFx) }, `Versteen 1 (+${per} 🦴)`));
+    if (owned > 1) box.append(el("button", { class: "btn small ghost", onclick: () => act("/api/fossils/dust", { key, count: owned - 1 }, (r) => `+${r.gained} 🦴`, dustFx) }, `Versteen ${owned - 1} dubbele (+${per * (owned - 1)} 🦴)`));
   } else if (variant === "kristal") box.append(el("p", { class: "muted" }, "🔒 Oerkristal is genummerd en kun je niet verstenen."));
   for (const v of ["normaal", "holo"]) {
     const cost = craftOf(card, v);
-    box.append(el("button", { class: "btn small", disabled: me.fossils < cost, onclick: () => act("/api/fossils/craft", { key: keyOf(card.id, v) }, () => `${card.name} (${catalog.variants[v].label}) gemaakt!`) }, `Maak ${catalog.variants[v].label} (${cost} 🦴)`));
+    box.append(el("button", { class: "btn small", disabled: me.fossils < cost, onclick: () => act("/api/fossils/craft", { key: keyOf(card.id, v) }, () => `${card.name} (${catalog.variants[v].label}) gemaakt!`, (r, before) => forge(holder(), cardEl(card, { variant: v }), r.cost, before)) }, `Maak ${catalog.variants[v].label} (${cost} 🦴)`));
   }
   box.append(el("p", { class: "muted small" }, `Je hebt ${me.fossils.toLocaleString("nl-NL")} 🦴 fossielen.`));
   return box;
@@ -374,16 +383,18 @@ function packsView() {
     clearInterval(packsView.timer);
     packsView.timer = setInterval(tickTimer, 30000);
     const open = async () => {
-      if (!(me.packs.available + me.packs.bought) || pack.classList.contains("hatch")) return;
-      pack.classList.add("hatch");
+      if (!(me.packs.available + me.packs.bought) || pack.classList.contains("busy")) return;
+      pack.classList.add("busy");
+      startShake(pack);
       try {
         const before = { ...me.collection };
         const { cards } = await api("/api/packs/open", {});
         await refreshMe();
-        setTimeout(() => showReveal(cards, before), 900);
+        await hatch(pack, bestTier(cards, parseKey));
+        showReveal(cards, before);
       } catch (ex) {
         toast(ex.message);
-        pack.classList.remove("hatch");
+        pack.classList.remove("busy", "shake", "shake-hard");
       }
     };
     pack.addEventListener("click", open);
@@ -447,6 +458,7 @@ function packsView() {
         el("button", { class: "btn", onclick: render }, "Verder")
       )
     );
+    deal([...row.querySelectorAll(".flip")]);
   };
 
   render();
@@ -623,7 +635,9 @@ function fossilsView() {
   btn.addEventListener("click", async () => {
     btn.disabled = true;
     try {
+      const before = me.fossils;
       const { gained } = await api("/api/fossils/dust-dupes", {});
+      await bonesToBank(btn, gained, before);
       await refreshMe();
       toast(`+${gained.toLocaleString("nl-NL")} 🦴 fossielen`);
       route();
