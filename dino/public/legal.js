@@ -39,7 +39,8 @@ export function privacyHtml() {
 <tr><td>Spelgegevens: kaarten, fossielen, eieren, punten</td><td>Het spel zelf</td><td>Uitvoering van de overeenkomst</td><td>Tot je je account verwijdert</td></tr>
 <tr><td>Gebruikersnaam en punten op de ranglijst</td><td>De openbare ranglijst. Kies dus een gebruikersnaam die niet je echte naam is.</td><td>Uitvoering van de overeenkomst</td><td>Tot je je account verwijdert</td></tr>
 <tr><td>Betalingen: betaalnummer, product, bedrag, status, datum</td><td>Aankopen leveren en onze administratie</td><td>Wettelijke plicht (fiscale bewaarplicht)</td><td>7 jaar, ook na het verwijderen van je account (dan zonder naam of e-mail)</td></tr>
-<tr><td>Een versleutelde, niet terug te rekenen code van je IP-adres (hash)</td><td>Misbruik voorkomen: maximaal 3 accounts per netwerk per dag en het afremmen van wachtwoord raden</td><td>Gerechtvaardigd belang</td><td>30 dagen (aanmelden), 1 dag (inlogpogingen)</td></tr>
+<tr><td>Een versleutelde, niet terug te rekenen code van je IP-adres (hash)</td><td>Misbruik voorkomen: maximaal 3 accounts per netwerk per dag, geen beloning voor nep-uitnodigingen vanaf hetzelfde netwerk, en het afremmen van wachtwoord raden</td><td>Gerechtvaardigd belang</td><td>Aanmelden: bij je account tot je het verwijdert (in de limietlijst 30 dagen); inlogpogingen: 1 dag</td></tr>
+<tr><td>Wie jou heeft uitgenodigd, en hoeveel vrienden jij hebt uitgenodigd</td><td>De beloning voor vrienden uitnodigen. Je gebruikersnaam staat in je eigen uitnodigingslink.</td><td>Uitvoering van de overeenkomst</td><td>Tot je je account verwijdert</td></tr>
 <tr><td>Inlogcookie en wachtwoord-resetlinks</td><td>Ingelogd blijven en je wachtwoord herstellen</td><td>Uitvoering van de overeenkomst</td><td>Cookie 30 dagen; resetlink 60 minuten</td></tr>
 </table></div>
 <p>Wij slaan <b>geen</b> bank- of kaartgegevens op en we bewaren je IP-adres niet zelf. Je gegevens worden niet verkocht en niet gebruikt voor advertenties.</p>
@@ -105,16 +106,19 @@ export function termsHtml({ spendCap, passDays }) {
 <h2>4. Herroepingsrecht (bedenktijd)</h2>
 <p>Bij online aankopen heb je normaal 14 dagen bedenktijd. Eieren en de Seizoenspas zijn digitale inhoud die we direct na betaling leveren. Daarom vragen we je vóór elke aankoop om aan te vinken dat je de aankoop <b>direct</b> wilt ontvangen en dat je daarmee <b>afziet van je herroepingsrecht</b>. Zonder dat vinkje kun je niet kopen. Is er iets misgegaan met een betaling of levering? Neem dan contact met ons op, dan lossen we het op.</p>
 
-<h2>5. Het spel kan veranderen</h2>
+<h2>5. Vrienden uitnodigen</h2>
+<p>Met je eigen uitnodigingslink kun je vrienden uitnodigen. Maakt iemand via jouw link een account, dan krijgt die een extra ei. Zodra die het eerste ei uitbroedt, krijg jij ook een ei, tot maximaal 10 per 30 dagen. Aanmeldingen vanaf hetzelfde netwerk als jij leveren geen beloning op. Nep-accounts aanmaken om eieren te verdienen is niet toegestaan (zie artikel 2).</p>
+
+<h2>6. Het spel kan veranderen</h2>
 <p>We werken DinoRijk regelmatig bij, bijvoorbeeld met nieuwe kaarten of seizoenen. We doen ons best om het spel altijd bereikbaar te houden, maar onderhoud of storingen kunnen voorkomen. Stoppen we met DinoRijk, dan laten we dat minstens 30 dagen van tevoren weten.</p>
 
-<h2>6. Aansprakelijkheid</h2>
+<h2>7. Aansprakelijkheid</h2>
 <p>Als wij aansprakelijk zijn voor schade, dan is dat beperkt tot het bedrag dat je in de 12 maanden daarvoor bij ons hebt betaald. Dit geldt niet bij opzet of grove schuld. Je wettelijke rechten als consument blijven altijd gelden.</p>
 
-<h2>7. Privacy</h2>
+<h2>8. Privacy</h2>
 <p>Hoe we met je gegevens omgaan, lees je in ons <a href="#/privacy">privacybeleid</a>.</p>
 
-<h2>8. Vragen en klachten</h2>
+<h2>9. Vragen en klachten</h2>
 <p>Heb je een vraag of klacht? Mail naar ${contact()}. We reageren binnen 14 dagen. Op deze voorwaarden is Nederlands recht van toepassing. Komen we er samen niet uit, dan kun je het geschil voorleggen aan de bevoegde Nederlandse rechter.</p>
 `
   );

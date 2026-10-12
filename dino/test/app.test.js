@@ -437,3 +437,51 @@ test("AVG: gegevens downloaden en account verwijderen (betalingen blijven anonie
   assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM collection").first()).n, 0);
   await register(client(), "weg"); // naam en e-mail zijn weer vrij
 });
+
+test("vrienden uitnodigen: allebei een ei, niet vanaf hetzelfde netwerk, max 10 per 30 dagen", async () => {
+  const { client, db, tick } = setup();
+  const host = client();
+  await register(host, "gastheer");
+  const bought = async (c) => (await c("GET", "/api/me")).body.packs.bought;
+
+  // Vriend via de link: meteen een extra ei; de uitnodiger pas als de vriend zijn eerste ei uitbroedt.
+  const v = client();
+  const r = await v("POST", "/api/register", { username: "vriend1", email: "vriend1@test.nl", password: "geheim123", adult: true, ref: "GASTHEER" });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.invited, true);
+  assert.equal(await bought(v), 1);
+  assert.deepEqual((await host("GET", "/api/me")).body.invite, { joined: 0, waiting: 1 });
+  assert.equal(await bought(host), 0);
+  await v("POST", "/api/packs/open");
+  await v("POST", "/api/packs/open");
+  assert.equal(await bought(host), 1); // één keer, niet per ei
+  assert.deepEqual((await host("GET", "/api/me")).body.invite, { joined: 1, waiting: 0 });
+
+  // Zelfde netwerk als de uitnodiger: account mag, maar geen extra eieren.
+  const ipHost = { "x-nf-client-connection-ip": "203.0.113.5" };
+  const host2 = client();
+  assert.equal((await host2("POST", "/api/register", { username: "thuis", email: "thuis@test.nl", password: "geheim123", adult: true }, ipHost)).status, 201);
+  const fake = client();
+  const rf = await fake("POST", "/api/register", { username: "nepvriend", email: "nep@test.nl", password: "geheim123", adult: true, ref: "thuis" }, ipHost);
+  assert.equal(rf.body.invited, false);
+  assert.equal(rf.body.sameNetwork, true);
+  assert.equal(await bought(fake), 0);
+
+  // Onbekende naam: gewoon een account zonder extra ei.
+  const x = client();
+  assert.equal((await x("POST", "/api/register", { username: "losse", email: "losse@test.nl", password: "geheim123", adult: true, ref: "bestaatniet" })).body.invited, false);
+
+  // Maximaal 10 beloonde vrienden per 30 dagen.
+  for (let i = 2; i <= 12; i++) {
+    const f = client();
+    await f("POST", "/api/register", { username: `vriend${i}`, email: `vriend${i}@test.nl`, password: "geheim123", adult: true, ref: "gastheer" });
+    await f("POST", "/api/packs/open");
+  }
+  assert.equal(await bought(host), RULES.referralsPer30d);
+  tick(31 * 24 * HOUR);
+  await host("POST", "/api/login", { login: "gastheer", password: "geheim123" });
+  const late = client();
+  await late("POST", "/api/register", { username: "laat", email: "laat@test.nl", password: "geheim123", adult: true, ref: "gastheer" });
+  await late("POST", "/api/packs/open");
+  assert.equal(await bought(host), RULES.referralsPer30d + 1);
+});

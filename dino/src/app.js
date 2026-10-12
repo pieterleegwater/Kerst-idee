@@ -19,6 +19,8 @@ export const RULES = {
   resetLinkMinutes: 60,
   resetsPerHour: 3,
   leaderboardSize: 50,
+  // Vrienden uitnodigen: allebei een extra ei; de uitnodiger maximaal zoveel keer per 30 dagen.
+  referralsPer30d: 10,
   // Bescherming: maximaal zoveel uitgeven per 30 dagen (in centen).
   spendCap30d: 10000,
 };
@@ -195,19 +197,23 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
           ? fail(429, `Vanaf dit netwerk zijn vandaag al ${RULES.accountsPerIpPerDay} accounts aangemaakt. Probeer het morgen opnieuw, of log in met je bestaande account.`)
           : fail(429, "Het is even heel druk. Probeer het over een uurtje opnieuw.");
       }
+      // Uitgenodigd door een vriend? Dan een extra ei, maar niet vanaf hetzelfde netwerk als de uitnodiger (nep-accounts).
+      const refName = typeof body.ref === "string" ? body.ref.trim().slice(0, 20) : "";
+      const referrer = refName ? await one("SELECT id, reg_ip_hash FROM users WHERE lower(username) = lower(?)", refName) : null;
+      const invited = !!referrer && referrer.reg_ip_hash !== ipHash;
       const { hash, salt } = await hashPassword(password);
       const id = crypto.randomUUID();
       try {
         await run(
-          "INSERT INTO users (id, username, email, pass_hash, pass_salt, created_at, pack_credits, credits_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-          id, username, email, hash, salt, new Date(now()).toISOString(), RULES.free.max, now()
+          "INSERT INTO users (id, username, email, pass_hash, pass_salt, created_at, pack_credits, credits_at, bought_eggs, referred_by, reg_ip_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          id, username, email, hash, salt, new Date(now()).toISOString(), RULES.free.max, now(), invited ? 1 : 0, invited ? referrer.id : null, ipHash
         );
       } catch (err) {
         if (!isUniqueViolation(err)) throw err;
         // Iemand anders was ons net voor met dezelfde naam of hetzelfde e-mailadres.
         return fail(409, (await one("SELECT 1 FROM users WHERE email = ?", email)) ? emailTaken : nameTaken);
       }
-      return json({ ok: true }, 201, { "Set-Cookie": await startSession(req, id) });
+      return json({ ok: true, invited, sameNetwork: !!referrer && !invited }, 201, { "Set-Cookie": await startSession(req, id) });
     },
 
     "POST /api/login": async (req, body) => {
@@ -316,6 +322,10 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
       const prints = await all("SELECT card_id, serial FROM prints WHERE user_id = ? ORDER BY created_at", user.id);
       const spent = await spentLast30d(user.id);
       const value = rows.reduce((sum, r) => sum + pointsOf(r.card_id) * r.count, 0);
+      const friends = await one(
+        "SELECT SUM(CASE WHEN referral_rewarded > 0 THEN 1 ELSE 0 END) AS joined, SUM(CASE WHEN referral_rewarded = 0 THEN 1 ELSE 0 END) AS waiting FROM users WHERE referred_by = ?",
+        user.id
+      );
       if (value !== user.score) await run("UPDATE users SET score = ? WHERE id = ?", value, user.id); // ranglijst bijwerken
       return json({
         username: user.username,
@@ -328,6 +338,7 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
         prints: prints.map((p) => ({ cardId: p.card_id, serial: p.serial })),
         value,
         spendLeft: Math.max(0, RULES.spendCap30d - spent),
+        invite: { joined: friends?.joined || 0, waiting: friends?.waiting || 0 },
       });
     },
 
@@ -349,7 +360,7 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
       const payments = await all("SELECT product, amount, status, created_at FROM payments WHERE user_id = ? AND status != 'reserving' ORDER BY created_at", user.id);
       const data = {
         exportedAt: new Date(now()).toISOString(),
-        account: { username: user.username, email: user.email || null, createdAt: user.created_at },
+        account: { username: user.username, email: user.email || null, createdAt: user.created_at, invitedByAFriend: !!user.referred_by },
         game: { packsOpened: user.packs_opened, fossils: user.fossils, boughtEggsLeft: user.bought_eggs, score: user.score, premiumUntil: user.premium_until > now() ? new Date(user.premium_until).toISOString() : null },
         collection: Object.fromEntries(collection.map((r) => [r.card_id, r.count])),
         oerkristal: prints.map((p) => ({ card: p.card_id, serial: p.serial, at: new Date(p.created_at).toISOString() })),
@@ -365,7 +376,7 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
       if (!(await verifyPassword(String(body.password || ""), user.pass_salt, user.pass_hash))) return fail(401, "Je wachtwoord klopt niet.");
       const { hash, salt } = await hashPassword(randomHex(32)); // niemand kan hier nog mee inloggen
       await db.batch([
-        db.prepare("UPDATE users SET username = ?, email = NULL, pass_hash = ?, pass_salt = ?, score = 0, fossils = 0, bought_eggs = 0, pack_credits = 0, premium_until = 0 WHERE id = ?").bind(`verwijderd_${randomHex(6)}`, hash, salt, user.id),
+        db.prepare("UPDATE users SET username = ?, email = NULL, pass_hash = ?, pass_salt = ?, score = 0, fossils = 0, bought_eggs = 0, pack_credits = 0, premium_until = 0, reg_ip_hash = NULL, referred_by = NULL WHERE id = ?").bind(`verwijderd_${randomHex(6)}`, hash, salt, user.id),
         db.prepare("DELETE FROM collection WHERE user_id = ?").bind(user.id),
         db.prepare("DELETE FROM password_resets WHERE user_id = ?").bind(user.id),
         db.prepare("DELETE FROM sessions WHERE user_id = ?").bind(user.id),
@@ -388,6 +399,16 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
         res = await run("UPDATE users SET bought_eggs = bought_eggs - 1, packs_opened = packs_opened + 1 WHERE id = ? AND bought_eggs >= 1", user.id);
       } else return fail(429, "Je hebt nu geen ei. Kom straks terug!");
       if (res.meta.changes !== 1) return fail(409, "Probeer het nog eens.");
+      // Eerste ei van een uitgenodigde vriend: nu krijgt de uitnodiger ook een ei (max per 30 dagen).
+      if (user.referred_by && !user.referral_rewarded) {
+        const claim = await run("UPDATE users SET referral_rewarded = ? WHERE id = ? AND referral_rewarded = 0", now(), user.id);
+        if (claim.meta.changes === 1) {
+          await run(
+            "UPDATE users SET bought_eggs = bought_eggs + 1 WHERE id = ? AND (SELECT COUNT(*) FROM users WHERE referred_by = ? AND referral_rewarded > ?) <= ?",
+            user.referred_by, user.referred_by, now() - 30 * DAY, RULES.referralsPer30d
+          );
+        }
+      }
 
       const cards = [];
       for (const key of drawPack(random)) {

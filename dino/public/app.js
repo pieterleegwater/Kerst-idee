@@ -8,6 +8,28 @@ const nav = document.getElementById("nav");
 let catalog;
 let me = null;
 
+// Uitnodigingslink (?vriend=naam): onthouden tot iemand zich aanmeldt, en de adresbalk weer opschonen.
+const REF_KEY = "dinorijk-vriend";
+const store = {
+  get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
+};
+{
+  const ref = new URLSearchParams(location.search).get("vriend");
+  if (ref && /^[A-Za-z0-9_]{3,20}$/.test(ref)) {
+    store.set(REF_KEY, JSON.stringify({ name: ref, at: Date.now() }));
+    history.replaceState(null, "", location.pathname + location.hash);
+  }
+}
+function invitedBy() {
+  try {
+    const r = JSON.parse(store.get(REF_KEY));
+    return r && Date.now() - r.at < 14 * 24 * 3600 * 1000 ? r.name : null;
+  } catch {
+    return null;
+  }
+}
+
 // ---------- Hulpjes ----------
 const el = (tag, attrs = {}, ...children) => {
   const node = document.createElement(tag);
@@ -298,10 +320,12 @@ function authView() {
   let mode = "register";
   const err = el("p", { class: "error", role: "alert" });
   const form = el("form", { class: "panel" });
+  const friend = invitedBy();
   const render = () => {
     put(
       form,
       "replaceChildren",
+      friend && mode === "register" ? el("div", { class: "invite-banner" }, "🎁 ", el("b", {}, friend), " nodigt je uit! Maak een account en krijg er een extra ei bij.") : null,
       el(
         "div",
         { class: "tabs" },
@@ -333,9 +357,14 @@ function authView() {
       await api(
         mode === "register" ? "/api/register" : "/api/login",
         mode === "register"
-          ? { username: d.get("username"), email: d.get("email"), password: d.get("password"), adult: d.get("adult") === "on", website: d.get("website") || "" }
+          ? { username: d.get("username"), email: d.get("email"), password: d.get("password"), adult: d.get("adult") === "on", website: d.get("website") || "", ref: friend || undefined }
           : { login: d.get("login"), password: d.get("password") }
-      );
+      ).then((r) => {
+        if (mode !== "register" || !friend) return;
+        store.set(REF_KEY, null);
+        if (r.invited) setTimeout(() => celebrate("+1 EI!", `Cadeautje van ${friend} 🎁`, "c-goud"), 400);
+        else if (r.sameNetwork) toast("Welkom! De uitnodiging telt niet vanaf hetzelfde netwerk als je vriend.");
+      });
       await refreshMe();
       location.hash = "#/";
       route();
@@ -404,12 +433,13 @@ function packsView() {
       "replaceChildren",
       emailBanner(),
       el("h1", {}, total ? `${total} ${total > 1 ? "eieren" : "ei"} klaar` : "Even geduld…"),
-      bought ? el("p", { class: "muted" }, `${available} gratis + ${bought} gekocht. Gratis eieren worden eerst uitgebroed.`) : null,
+      bought ? el("p", { class: "muted" }, `${available} gratis + ${bought} extra. Gratis eieren worden eerst uitgebroed.`) : null,
       el("p", { class: "muted" }, "Tik op het ei om het uit te broeden. Gloeit een kaart al op de achterkant? Dan zit er iets bijzonders in…"),
       pack,
       countdown,
       el("p", { class: "muted" }, `Verzamelwaarde: `, el("b", {}, `${me.value.toLocaleString("nl-NL")} punten`)),
-      el("p", {}, el("a", { href: "#/winkel" }, total ? "Meer eieren of de Seizoenspas →" : "Niet wachten? Koop eieren →"))
+      el("p", {}, el("a", { href: "#/winkel" }, total ? "Meer eieren of de Seizoenspas →" : "Niet wachten? Koop eieren →")),
+      inviteBox()
     );
   };
 
@@ -781,6 +811,48 @@ async function shopView(params) {
   );
 }
 
+// Je eigen uitnodigingslink, met delen/kopiëren en hoeveel vrienden er meededen.
+function inviteBox() {
+  const link = `${location.origin}/?vriend=${encodeURIComponent(me.username)}`;
+  const text = `Doe mee met DinoRijk en verzamel echte dino-kaarten! Via mijn link krijg je een extra ei 🥚🦖`;
+  const input = el("input", { value: link, readonly: true, onclick: (e) => e.target.select(), "aria-label": "Jouw uitnodigingslink" });
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      toast("Link gekopieerd! Stuur hem naar je vrienden.");
+    } catch {
+      input.select();
+      toast("Selecteer en kopieer de link hierboven.");
+    }
+  };
+  const share = async () => {
+    try {
+      await navigator.share({ title: "DinoRijk", text, url: link });
+    } catch (ex) {
+      if (ex?.name !== "AbortError") copy();
+    }
+  };
+  const { joined, waiting } = me.invite || { joined: 0, waiting: 0 };
+  return el(
+    "div",
+    { class: "panel invite" },
+    el("h2", {}, "🎁 Nodig vrienden uit"),
+    el("p", { class: "muted" }, `Maakt een vriend via jouw link een account, dan krijgt die meteen een extra ei. Zodra die het eerste ei uitbroedt, krijg jij er ook één (maximaal ${catalog.rules.referralsPer30d} per 30 dagen).`),
+    el("div", { class: "invite-row" }, input, navigator.share ? el("button", { class: "btn small", onclick: share }, "📲 Delen") : null, el("button", { class: `btn small${navigator.share ? " ghost" : ""}`, onclick: copy }, "Kopieer")),
+    joined || waiting ? el("p", { class: "small" }, `${joined} ${joined === 1 ? "vriend deed" : "vrienden deden"} mee`, waiting ? ` · ${waiting} ${waiting === 1 ? "wacht" : "wachten"} nog op het eerste ei` : "") : null
+  );
+}
+
+// Een vriend broedde zijn eerste ei uit: feestje (één keer per nieuwe vriend).
+function checkInviteReward() {
+  if (!me?.invite) return;
+  const key = `dinorijk-vrienden-${me.username}`;
+  const seen = Number(store.get(key));
+  const now = me.invite.joined;
+  if (store.get(key) != null && now > seen) celebrate(`+${now - seen} EI!`, now - seen === 1 ? "Een vriend deed mee 🎁" : `${now - seen} vrienden deden mee 🎁`, "c-goud");
+  store.set(key, String(now));
+}
+
 function accountView() {
   const pw = el("input", { type: "password", required: true, autocomplete: "current-password", placeholder: "Je wachtwoord" });
   const sure = el("input", { type: "checkbox", required: true });
@@ -820,6 +892,8 @@ function accountView() {
       el("p", { class: "muted small" }, "Lees hoe we met je gegevens omgaan in het ", el("a", { href: "#/privacy" }, "privacybeleid"), ".")
     ),
     emailBanner(),
+    el("br"),
+    inviteBox(),
     el("br"),
     del
   );
@@ -901,6 +975,7 @@ async function route(keepOverlay) {
     else node = packsView();
     view.replaceChildren(node);
     // Ander scherm (of net in-/uitgelogd): bovenaan beginnen, anders land je op de telefoon halverwege de pagina.
+    checkInviteReward();
     const screen = `${path}|${!!me}`;
     if (screen !== route.screen) scrollTo(0, 0);
     route.screen = screen;

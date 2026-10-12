@@ -22,6 +22,10 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS score INTEGER NOT NULL DEFAULT 0;
 CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users (email);
 CREATE INDEX IF NOT EXISTS users_score ON users (score DESC);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_rewarded BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reg_ip_hash TEXT;
+CREATE INDEX IF NOT EXISTS users_referred_by ON users (referred_by, referral_rewarded);
 
 CREATE TABLE IF NOT EXISTS password_resets (
   token_hash TEXT PRIMARY KEY,

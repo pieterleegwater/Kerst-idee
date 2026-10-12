@@ -14,8 +14,13 @@ CREATE TABLE IF NOT EXISTS users (
   packs_opened INTEGER NOT NULL DEFAULT 0,
   bought_eggs INTEGER NOT NULL DEFAULT 0 CHECK (bought_eggs >= 0),
   fossils INTEGER NOT NULL DEFAULT 0 CHECK (fossils >= 0),
-  score INTEGER NOT NULL DEFAULT 0
+  score INTEGER NOT NULL DEFAULT 0,
+  -- Uitnodigen: wie nodigde jou uit, wanneer leverde dat de uitnodiger een ei op (0 = nog niet), hash van je aanmeld-IP.
+  referred_by TEXT,
+  referral_rewarded INTEGER NOT NULL DEFAULT 0,
+  reg_ip_hash TEXT
 );
+CREATE INDEX IF NOT EXISTS users_referred_by ON users (referred_by, referral_rewarded);
 CREATE INDEX IF NOT EXISTS users_score ON users (score DESC);
 
 -- Wachtwoord-resetlinks: alleen een hash van de link wordt bewaard.
