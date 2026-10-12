@@ -78,10 +78,13 @@ label { font-weight: 600; font-size: .92rem; }
 .card.r-goud { --frame: linear-gradient(135deg, #fff3b0, #e0a500 40%, #9a6b00 60%, #ffe27a); --plate: linear-gradient(180deg, #4a3300, #1f1500); }
 .card.r-icoon { --frame: linear-gradient(135deg, #ffd1ff, #b14aed 35%, #5b2a86 60%, #ff8ad8); --plate: linear-gradient(180deg, #3d1460, #1a0730); }
 
-.card .inner { position: absolute; inset: 0; border-radius: 4px; overflow: hidden; display: flex; flex-direction: column; padding: 3cqw 3cqw 2.4cqw; gap: 1.4cqw; }
-.card .art { position: relative; order: 2; flex: none; height: 47%; border-radius: 2.5cqw; overflow: hidden; box-shadow: 0 0 0 .8cqw #0009, inset 0 0 6cqw #0008; }
+.card .inner {
+  position: absolute; inset: 0; border-radius: 4px; overflow: hidden; padding: 3cqw 3cqw 2.4cqw;
+  display: grid; grid-template-rows: auto auto auto auto 1fr auto; grid-template-columns: minmax(0, 1fr); row-gap: 1.4cqw;
+}
+.card .art { position: relative; grid-row: 2; height: 66cqw; border-radius: 2.5cqw; overflow: hidden; box-shadow: 0 0 0 .8cqw #0009, inset 0 0 6cqw #0008; }
 .card .art svg { display: block; width: 100%; height: 100%; }
-.card .top { order: 1; display: flex; align-items: center; gap: 2.4cqw; height: 13%; }
+.card .top { grid-row: 1; display: flex; align-items: center; gap: 2.4cqw; min-height: 15cqw; }
 .card .rating { font-size: 15cqw; line-height: 1; text-shadow: 0 .8cqw 0 #0009; }
 .card .meta { display: flex; flex-direction: column; line-height: 1.05; }
 .card .pos { font-size: 6.4cqw; opacity: .9; }
@@ -93,14 +96,14 @@ label { font-weight: 600; font-size: .92rem; }
 .card.r-zilver .gems { color: #e3e8ec; }
 .card.r-goud .gems { color: #ffd166; }
 .card.r-icoon .gems { color: #f0b3ff; font-size: 8cqw; }
-.card .plate { order: 3; background: var(--plate); border-radius: 2cqw; padding: 1.6cqw 2cqw; text-align: center; box-shadow: inset 0 .6cqw 0 #ffffff1f, 0 .6cqw 1.6cqw #0008; }
+.card .plate { grid-row: 3; min-width: 0; background: var(--plate); border-radius: 2cqw; padding: 1.6cqw 2cqw; text-align: center; box-shadow: inset 0 .6cqw 0 #ffffff1f, 0 .6cqw 1.6cqw #0008; }
 .card .name { display: block; font-size: 8.6cqw; line-height: 1.1; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card .name.long { font-size: 6.6cqw; }
 .card .sub { display: block; font: 600 4.6cqw "Inter"; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.card .stats { order: 4; display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.4cqw; text-align: center; font-size: 4.6cqw; }
+.card .stats { grid-row: 4; display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.4cqw; text-align: center; font-size: 4.6cqw; }
 .card .stats span { background: #0007; border-radius: 1.6cqw; padding: .6cqw 0; }
 .card .stats b { display: block; font-size: 7.2cqw; line-height: 1.1; }
-.card .foot { order: 5; margin-top: auto; display: flex; gap: 2cqw; align-items: center; font: 700 4.2cqw "Inter"; opacity: .85; }
+.card .foot { grid-row: 6; display: flex; gap: 1.6cqw; align-items: center; font: 700 3.8cqw "Inter"; opacity: .85; white-space: nowrap; min-width: 0; overflow: hidden; }
 .card .vtag { margin-left: auto; padding: .4cqw 2cqw; border-radius: 99px; background: #000b; text-transform: uppercase; letter-spacing: .06em; }
 .card .serial { padding: .4cqw 2cqw; border-radius: 99px; background: linear-gradient(90deg, #7df9ff, #ff7df0); color: #10061a; font-weight: 800; }
 .card .count { position: absolute; top: -10px; right: -10px; z-index: 4; background: #e63946; color: #fff; border: 2px solid #fff; border-radius: 999px; padding: 0 2.6cqw; font: 800 .8rem/1.6 "Inter"; }
@@ -149,11 +152,13 @@ label { font-weight: 600; font-size: .92rem; }
 .card.v-prisma { --frame: conic-gradient(from var(--spin), #ff0080, #ff8c00, #ffe600, #00ff85, #00cfff, #8a2be2, #ff0080); animation: spin 4s linear infinite; box-shadow: 0 0 28px rgba(255, 0, 200, .45), 0 10px 24px rgba(0,0,0,.55); }
 .card.v-prisma .art, .card.v-kristal .art { position: absolute; inset: 0 0 auto 0; height: 74%; border-radius: 0; box-shadow: none; z-index: 0; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
 .card.v-prisma .inner > :not(.art), .card.v-kristal .inner > :not(.art) { position: relative; z-index: 1; }
-.card.v-prisma .art, .card.v-kristal .art { order: 0; }
+.card.v-prisma .inner, .card.v-kristal .inner { grid-template-rows: auto 1fr auto auto auto; }
+.card.v-prisma .art, .card.v-kristal .art { grid-row: auto; } /* absoluut: hele kaart, niet één rij */
+.card.v-prisma .stats, .card.v-kristal .stats { grid-row: 4; }
+.card.v-prisma .foot, .card.v-kristal .foot { grid-row: 5; }
 .card.v-prisma .top, .card.v-kristal .top { text-shadow: 0 0 3cqw #000; }
-.card.v-prisma .plate, .card.v-kristal .plate { background: #000a; backdrop-filter: blur(2px); margin-top: auto; }
+.card.v-prisma .plate, .card.v-kristal .plate { background: #000a; -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
 .card.v-prisma .stats span, .card.v-kristal .stats span { background: #000a; }
-.card.v-prisma .foot, .card.v-kristal .foot { margin-top: 0; }
 .card.v-prisma .fx {
   background: conic-gradient(from var(--spin) at var(--mx) var(--my), hsla(0,100%,60%,.6), hsla(60,100%,60%,.6), hsla(120,100%,60%,.6), hsla(180,100%,60%,.6), hsla(240,100%,65%,.6), hsla(300,100%,60%,.6), hsla(360,100%,60%,.6)),
     radial-gradient(circle, #fff 0 .7px, transparent 1.2px) 0 0 / 7px 7px;
@@ -182,11 +187,12 @@ label { font-weight: 600; font-size: .92rem; }
 
 /* Nog niet gevonden: silhouet */
 .card.missing { --frame: linear-gradient(135deg, #4a3520, #2a1e12); background: #1a120a padding-box, var(--frame) border-box; box-shadow: none; }
-.card.missing .art { height: 62%; order: 1; }
+.card.missing .inner { grid-template-rows: auto auto 1fr auto; }
+.card.missing .art { grid-row: 1; height: 86cqw; }
 .card.missing svg .dino { filter: brightness(0); opacity: .75; }
-.card.missing .plate { order: 2; background: #0006; box-shadow: none; }
+.card.missing .plate { grid-row: 2; background: #0006; box-shadow: none; }
 .card.missing .name { color: var(--muted); }
-.card.missing .foot { order: 3; color: var(--muted); }
+.card.missing .foot { grid-row: 4; color: var(--muted); }
 
 /* =================== EI & ONTHULLING =================== */
 .packs-hero { text-align: center; padding: 10px 0 20px; }
@@ -341,3 +347,70 @@ table.board tr.me td { background: rgba(255, 183, 3, .12); }
 .share-preview img { width: 100%; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.6); display: block; }
 .share-actions { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; margin-top: 10px; }
 @media (max-width: 640px) { .share-preview { width: 70%; margin: 0 auto; } }
+
+/* =================== TELEFOON =================== */
+nav a i { font-style: normal; display: none; }
+.logout-top { display: none; color: var(--muted); text-decoration: none; font-weight: 600; font-size: .85rem; padding: 6px 12px; border-radius: 999px; background: var(--bg2); }
+@media (max-width: 760px) {
+  /* Geen backdrop-filter op de kop: die zou de vaste menubalk "vangen" en bovenaan zetten */
+  header.top { padding: 10px 16px; padding-top: max(10px, env(safe-area-inset-top)); -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(18, 13, 8, .97); }
+  .logo { font-size: 1.15rem; }
+  /* Menubalk onderin, zoals in een app */
+  nav {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: grid; grid-template-columns: repeat(5, 1fr);
+    gap: 0; padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); background: rgba(18, 13, 8, .96);
+    border-top: 1px solid var(--line); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  }
+  nav a { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 4px 2px; border-radius: 12px; font-size: .68rem; position: relative; }
+  nav a i { display: block; font-size: 1.35rem; line-height: 1.2; }
+  nav a.on { background: var(--bg2); color: var(--accent); }
+  nav b { position: absolute; top: 0; right: 4px; font-size: .6rem; padding: 0 4px; margin: 0; }
+  nav a.logout { display: none; }
+  body:has(nav:not([hidden])) .logout-top { display: block; }
+  body:has(nav:not([hidden])) main { padding-bottom: 96px; }
+  body:has(nav:not([hidden])) .foot { padding-bottom: calc(90px + env(safe-area-inset-bottom)); }
+
+  main { padding: 16px 16px 40px; }
+  h1 { font-size: clamp(1.8rem, 9vw, 2.6rem); }
+
+  /* Startpagina: drie kaarten als waaier, formulier er direct onder */
+  .grid2 { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .showcase { justify-content: center; flex-wrap: nowrap; gap: 0; margin: 14px 0 6px; padding: 0 8px; }
+  .showcase .card { width: 34%; max-width: 160px; transform-origin: bottom center; }
+  .showcase .card:nth-child(1) { transform: rotate(-8deg) translateX(10%); }
+  .showcase .card:nth-child(2) { transform: translateY(-10px) scale(1.06); z-index: 2; }
+  .showcase .card:nth-child(3) { transform: rotate(8deg) translateX(-10%); }
+
+  /* Eieren openen: 2 per rij, laatste kaart in het midden */
+  .reveal { gap: 12px; margin: 16px 0 22px; }
+  .reveal .flip { width: calc(50% - 8px); max-width: 200px; }
+  .pack { width: 170px; }
+
+  /* Album en lijsten */
+  .cards { gap: 10px; padding: 12px 4px 16px; margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+  .cards .card { width: 136px; }
+  .filters { flex-wrap: nowrap; overflow-x: auto; margin: 0 -16px 14px; padding: 0 16px 4px; scrollbar-width: none; }
+  .filters button { flex: none; }
+  .pick .card { width: 112px; }
+  table.odds { display: block; overflow-x: auto; }
+  table.board th, table.board td { padding: 9px 5px; }
+
+  /* Vensters */
+  .overlay { align-items: start; padding: 12px; }
+  .detail { flex-direction: column; align-items: stretch; padding: 16px; gap: 14px; }
+  .detail .big { display: flex; justify-content: center; }
+  .detail .big .card { width: min(64vw, 250px); }
+  .detail > div:last-child { min-width: 0; }
+  .share-box .share-preview { width: min(56vw, 240px); margin: 0 auto; }
+  .share-actions .btn { width: 100%; text-align: center; }
+  .factions .btn { flex: 1 1 auto; }
+
+  .fossil-bank { flex-direction: column; align-items: stretch; text-align: center; }
+  .banner .row input { min-width: 0; flex-basis: 100%; }
+  .panel { padding: 16px; }
+  .price { font-size: 2.4rem; }
+}
+@media (max-width: 380px) {
+  .cards .card { width: 124px; }
+  nav a { font-size: .62rem; }
+}
