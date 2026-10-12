@@ -8,15 +8,31 @@ let schemaReady;
 
 export class MissingDatabaseUrl extends Error {}
 
+// Leest postgresql://gebruiker:wachtwoord@host:poort/database zelf uit, zodat een wachtwoord met
+// tekens als # / ? @ of spaties niet het adres breekt (een gewone URL-parser knipt daar verkeerd).
+export function parseDbUrl(raw) {
+  const url = String(raw || "").trim();
+  const m = url.match(/^postgres(?:ql)?:\/\/([^:@\/]+)(?::(.*))?@([^@\/:?#]+)(?::(\d+))?(?:\/([^?#]*))?(?:\?.*)?$/s);
+  if (!m) return null;
+  const decode = (v) => {
+    try {
+      return decodeURIComponent(v);
+    } catch {
+      return v; // niet-gecodeerde % of andere tekens: letterlijk gebruiken
+    }
+  };
+  return { user: decode(m[1]), password: m[2] == null ? undefined : decode(m[2]), host: m[3], port: Number(m[4] || 5432), database: decode(m[5] || "postgres") };
+}
+
 export function supabasePool() {
   if (pool) return pool;
-  const url = process.env.SUPABASE_DB_URL;
-  if (!url) throw new MissingDatabaseUrl("SUPABASE_DB_URL ontbreekt");
-  // sslmode uit de URL halen: we zetten SSL hieronder zelf aan.
-  const connectionString = url.replace(/[?&]sslmode=[^&]*/, "");
+  const raw = process.env.SUPABASE_DB_URL;
+  if (!raw) throw new MissingDatabaseUrl("SUPABASE_DB_URL ontbreekt");
+  const cfg = parseDbUrl(raw);
+  if (!cfg) throw new Error("SUPABASE_DB_URL heeft niet de vorm postgresql://gebruiker:wachtwoord@host:poort/database");
   // SUPABASE_DB_SSL=false alleen voor lokaal testen zonder SSL.
   const ssl = process.env.SUPABASE_DB_SSL === "false" ? false : { rejectUnauthorized: false };
-  pool = new pg.Pool({ connectionString, ssl, max: 3, idleTimeoutMillis: 10000 });
+  pool = new pg.Pool({ ...cfg, ssl, max: 3, idleTimeoutMillis: 10000 });
   return pool;
 }
 
