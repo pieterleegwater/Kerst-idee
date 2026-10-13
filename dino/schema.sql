@@ -29,7 +29,9 @@ CREATE TABLE IF NOT EXISTS users (
   q_rare INTEGER NOT NULL DEFAULT 0,
   quests_claimed INTEGER NOT NULL DEFAULT 0,
   realms_claimed INTEGER NOT NULL DEFAULT 0,
-  goals_claimed INTEGER NOT NULL DEFAULT 0
+  goals_claimed INTEGER NOT NULL DEFAULT 0,
+  -- Geluksmeter: eieren sinds de laatste Legendarische kaart.
+  since_legend INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS users_referred_by ON users (referred_by, referral_rewarded);
 CREATE INDEX IF NOT EXISTS users_score ON users (score DESC);

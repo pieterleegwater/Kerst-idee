@@ -442,7 +442,8 @@ function packsView() {
       pack,
       countdown,
       el("p", { class: "muted" }, `Verzamelwaarde: `, el("b", {}, `${me.value.toLocaleString("nl-NL")} punten`)),
-      el("p", {}, el("a", { href: "#/winkel" }, total ? "Meer eieren of de Seizoenspas →" : "Niet wachten? Koop eieren →")),
+      pityMeter(),
+      total ? el("p", {}, el("a", { href: "#/winkel" }, me.starterAvailable && catalog.products.starter ? `🎁 Eenmalig: ${catalog.products.starter.eggs} eieren voor ${euro(catalog.products.starter.price)} →` : "Meer eieren of de Seizoenspas →")) : outOfEggsOffer(),
       questsPanel(),
       installPanel(),
       inviteBox()
@@ -742,7 +743,6 @@ async function shopView(params) {
     history.replaceState(null, "", "#/winkel");
   }
   const { products, rules } = catalog;
-  const euro = (c) => `€${(c / 100).toFixed(2).replace(".", ",")}`;
   // Digitale inhoud: vooraf instemmen met directe levering en afzien van de bedenktijd (wettelijk verplicht).
   const waiver = el("input", { type: "checkbox", id: "waiver" });
   const waiverBox = el(
@@ -770,11 +770,33 @@ async function shopView(params) {
       e.target.disabled = false;
     }
   };
-  const eggs = Object.entries(products).filter(([, p]) => p.eggs);
+  // Prijs per ei van het kleinste pakket, om het voordeel van grotere pakketten te tonen.
+  const eggs = Object.entries(products).filter(([, p]) => p.eggs && !p.once);
+  const base = Math.max(...eggs.map(([, p]) => p.price / p.eggs));
+  const saving = (p) => Math.round((1 - p.price / p.eggs / base) * 100);
+  const st = products.starter;
+  const extraPerDay = 24 / (rules.premium.interval / 3600000) - 24 / (rules.free.interval / 3600000);
   return el(
     "div",
     {},
     el("h1", {}, "Winkel"),
+    pityMeter(),
+    me.starterAvailable && st
+      ? el(
+          "div",
+          { class: "panel starter" },
+          el("span", { class: "ptag" }, "🎁 Eenmalig aanbod"),
+          el("div", { class: "eggs" }, "🥚".repeat(5), el("br"), "🥚".repeat(5)),
+          el(
+            "div",
+            {},
+            el("h2", {}, "Starterspakket"),
+            el("p", {}, `${st.eggs} eieren voor maar `, el("b", { class: "sprice" }, euro(st.price)), " ", el("s", { class: "muted" }, euro(Math.round(base * st.eggs)))),
+            el("p", { class: "muted small" }, `Slechts ${euro(Math.round(st.price / st.eggs))} per ei · alleen voor je eerste aankoop`),
+            el("button", { class: "btn", onclick: buy("starter") }, `Pak ${st.eggs} eieren voor ${euro(st.price)}`)
+          )
+        )
+      : null,
     waiverBox,
     el(
       "div",
@@ -784,6 +806,7 @@ async function shopView(params) {
           "div",
           { class: `panel product${p.tag ? " tagged" : ""}` },
           p.tag ? el("span", { class: "ptag" }, p.tag) : null,
+          saving(p) > 0 ? el("span", { class: "psave" }, `Bespaar ${saving(p)}%`) : null,
           el("div", { class: "eggs" }, "🥚".repeat(Math.min(p.eggs, 5))),
           el("h2", {}, p.label),
           el("div", { class: "price" }, euro(p.price)),
@@ -793,11 +816,18 @@ async function shopView(params) {
       ),
       el(
         "div",
-        { class: "panel product" },
+        { class: "panel product pass tagged" },
+        el("span", { class: "ptag" }, "Meeste waarde"),
         el("div", { class: "eggs" }, "⏱️"),
         el("h2", {}, products.pass.label),
         el("div", { class: "price" }, euro(products.pass.price)),
-        el("ul", { class: "ticks" }, el("li", {}, `Elke ${rules.premium.interval / 3600000} uur een gratis ei`), el("li", {}, `Spaar tot ${rules.premium.max} gratis eieren op`)),
+        el(
+          "ul",
+          { class: "ticks" },
+          el("li", {}, `Elke ${rules.premium.interval / 3600000} uur een gratis ei (in plaats van ${rules.free.interval / 3600000})`),
+          el("li", {}, `Spaar tot ${rules.premium.max} gratis eieren op`),
+          el("li", {}, el("b", {}, `≈ ${extraPerDay * products.pass.days} extra eieren`), ` in ${products.pass.days} dagen`)
+        ),
         me.premiumUntil ? el("p", {}, `Actief tot ${new Date(me.premiumUntil).toLocaleDateString("nl-NL")}`) : null,
         el("button", { class: "btn", onclick: buy("pass") }, me.premiumUntil ? "Verlengen" : "Kopen")
       )
@@ -810,15 +840,41 @@ async function shopView(params) {
         "ul",
         {},
         el("li", {}, "Gekochte eieren hebben precies dezelfde kansen als gratis eieren. ", el("a", { href: "#/regels" }, "Bekijk de kansen.")),
-        el("li", {}, "Kaarten en fossielen hebben geen geldwaarde: je kunt ze niet verkopen, ruilen of uitbetalen, en met fossielen koop je geen eieren."),
-        el("li", {}, `Uitgavegrens: maximaal ${euro(rules.spendCap30d)} per 30 dagen. Je kunt nu nog ${euro(me.spendLeft)} uitgeven.`)
+        el("li", {}, `Geluksmeter: in uiterlijk elk ${rules.pity}e ei zit gegarandeerd een Legendarische kaart.`),
+        el("li", {}, "Kaarten en fossielen hebben geen geldwaarde: je kunt ze niet verkopen, ruilen of uitbetalen, en met fossielen koop je geen eieren.")
       ),
       catalog.demoMode ? el("p", { class: "muted" }, "Testmodus: er wordt niets afgeschreven.") : el("p", { class: "muted" }, "Betalen met iDEAL, Bancontact of creditcard via Mollie.")
     )
   );
 }
 
+// Geluksmeter: hoe ver je bent tot de gegarandeerde Legendarische kaart.
+function pityMeter() {
+  if (!me.pity) return null;
+  const { left, of } = me.pity;
+  return el(
+    "div",
+    { class: "pity" },
+    el("div", { class: "pity-top" }, el("b", {}, "⭐ Geluksmeter"), el("span", {}, left === 1 ? "Volgende ei: gegarandeerd Legendarisch!" : `Legendarisch gegarandeerd binnen ${left} eieren`)),
+    el("div", { class: "qbar pity-bar" }, el("i", { style: `width:${Math.round(((of - left) / of) * 100)}%` }))
+  );
+}
+
+// Aanbieding als je geen eieren meer hebt.
+function outOfEggsOffer() {
+  const { products } = catalog;
+  const starter = me.starterAvailable && products.starter;
+  return el(
+    "div",
+    { class: "panel offer" },
+    el("b", {}, "Niet wachten?"),
+    el("span", { class: "muted" }, starter ? `Eenmalig: ${starter.eggs} eieren voor ${euro(starter.price)}` : `${products.eieren12.label} voor ${euro(products.eieren12.price)}, of de Seizoenspas voor sneller gratis eieren`),
+    el("a", { class: "btn small", href: "#/winkel" }, starter ? "Pak het aanbod" : "Naar de winkel")
+  );
+}
+
 // ---------- Opdrachten, verzameldoelen, live-balk ----------
+const euro = (c) => `€${(c / 100).toFixed(2).replace(".", ",")}`;
 const REALM_ICON = { vuur: "🌋", ijs: "❄️", jungle: "🌿", oceaan: "🌊", storm: "⚡", schaduw: "🌑" };
 const realmBadges = (mask) => catalog.groups.filter((_, i) => mask & (1 << i)).map((g) => REALM_ICON[g.id] || "🏅").join("");
 const rewardText = (r) => [r.eggs ? `${r.eggs} 🥚` : null, r.fossils ? `${r.fossils} 🦴` : null].filter(Boolean).join(" + ");
@@ -1152,7 +1208,7 @@ function rulesView() {
       el("li", {}, "Kaarten zijn virtueel, hebben geen geldwaarde en kunnen niet voor geld worden gekocht, verkocht of uitbetaald."),
       el("li", {}, "Gekochte en gratis eieren hebben exact dezelfde kansen."),
       el("li", {}, "Kaarten kun je niet ruilen of verkopen. Je kunt ze verstenen tot fossielen en daarmee een dino naar keuze maken (Normaal of Holo). Met fossielen koop je geen eieren."),
-      el("li", {}, `Uitgavegrens: maximaal €${catalog.rules.spendCap30d / 100} per 30 dagen per account.`),
+      el("li", {}, `Geluksmeter: in uiterlijk elk ${catalog.rules.pity}e ei zit gegarandeerd een Legendarische kaart. Zat er al eerder een in, dan begint de teller opnieuw. Dit geldt voor gratis en gekochte eieren.`),
       el("li", {}, "Handel in accounts voor geld is verboden en leidt tot blokkering."),
       el("li", {}, "De soorten zijn echte prehistorische dieren; namen, rijken en krachten zijn verzonnen en de afbeeldingen zijn met AI gemaakt. De weetjes op de kaarten kloppen wel!")
     )
@@ -1187,7 +1243,7 @@ async function route(keepOverlay) {
     else if (path === "/reset") node = resetView(params);
     else if (path === "/vergeten") node = forgotView();
     else if (path === "/privacy") node = privacyHtml();
-    else if (path === "/voorwaarden") node = termsHtml({ spendCap: catalog.rules.spendCap30d, passDays: catalog.products.pass.days });
+    else if (path === "/voorwaarden") node = termsHtml({ pity: catalog.rules.pity, passDays: catalog.products.pass.days });
     else if (!me) node = authView();
     else if (path === "/album") node = albumView();
     else if (path === "/fossielen") node = fossilsView();

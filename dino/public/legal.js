@@ -78,7 +78,7 @@ export function privacyHtml() {
   );
 }
 
-export function termsHtml({ spendCap, passDays }) {
+export function termsHtml({ pity, passDays }) {
   return page(
     "Algemene voorwaarden",
     `
@@ -101,7 +101,8 @@ export function termsHtml({ spendCap, passDays }) {
 <li>Je aankoop staat direct na de betaling in je account.</li>
 <li>De Seizoenspas geldt ${passDays} dagen en wordt niet automatisch verlengd.</li>
 <li>Gekochte eieren hebben precies dezelfde kansen als gratis eieren. Alle kansen staan op <a href="#/regels">Kansen &amp; regels</a>.</li>
-<li>Om je te beschermen kun je maximaal €${spendCap / 100} per 30 dagen uitgeven.</li>
+<li>Het Starterspakket kun je één keer per account kopen.</li>
+<li>Geluksmeter: in uiterlijk elk ${pity}e ei (gratis of gekocht) zit gegarandeerd een Legendarische kaart.</li>
 </ul>
 
 <h2>4. Herroepingsrecht (bedenktijd)</h2>

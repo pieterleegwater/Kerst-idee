@@ -33,12 +33,14 @@ export const RULES = {
   goals: [{ count: 10, fossils: 50 }, { count: 25, eggs: 1 }, { count: 50, eggs: 2 }, { count: 75, eggs: 3 }, { count: 96, eggs: 5 }],
   realmReward: { eggs: 2 },
   daily: [{ fossils: 10 }, { fossils: 10 }, { fossils: 15 }, { fossils: 15 }, { fossils: 20 }, { fossils: 25 }, { eggs: 2 }],
-  // Bescherming: maximaal zoveel uitgeven per 30 dagen (in centen).
-  spendCap30d: 10000,
+  // Geluksmeter: uiterlijk elk zoveelste ei bevat gegarandeerd een Legendarische kaart (gratis én gekochte eieren).
+  pity: 30,
 };
 
 // Wat je kunt kopen. Eieren zijn het enige wat je met geld koopt; fossielen kun je nooit kopen of inwisselen voor eieren.
 export const PRODUCTS = {
+  // Eenmalig per account: de eerste aankoop zo aantrekkelijk mogelijk.
+  starter: { label: "Starterspakket: 10 eieren", price: 199, eggs: 10, once: true, tag: "Eenmalig" },
   eieren5: { label: "5 eieren", price: 399, eggs: 5 },
   eieren12: { label: "12 eieren", price: 799, eggs: 12, tag: "Meest gekozen" },
   eieren30: { label: "30 eieren", price: 1799, eggs: 30, tag: "Beste prijs per ei" },
@@ -121,7 +123,7 @@ const normEmail = (e) => String(e || "").trim().toLowerCase();
 const validEmail = (e) => e.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);
 const scoreOf = (keys) => keys.reduce((sum, k) => sum + pointsOf(k), 0);
 const isUniqueViolation = (err) => err?.code === "23505" || /UNIQUE constraint/i.test(err?.message || "");
-// Betalingen die meetellen voor de bestedingslimiet ('reserving' = net aangevraagd, Mollie nog bezig).
+// Betalingen die lopen of gelukt zijn ('reserving' = net aangevraagd, Mollie nog bezig).
 const COUNTED = "('paid', 'open', 'pending', 'authorized', 'reserving')";
 
 function readCookie(req, name) {
@@ -164,10 +166,6 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
     return `sid=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${RULES.sessionDays * 86400}${secure}`;
   }
 
-  async function spentLast30d(userId) {
-    const row = await one(`SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE user_id = ? AND status IN ${COUNTED} AND created_at > ?`, userId, now() - 30 * DAY);
-    return row.total;
-  }
 
   // Levert een betaald product precies één keer: leveren en 'paid' zetten gebeuren samen in één transactie.
   async function fulfil(paymentId) {
@@ -410,7 +408,7 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
       const pack = packState(user, now());
       const rows = await all("SELECT card_id, count FROM collection WHERE user_id = ?", user.id);
       const prints = await all("SELECT card_id, serial FROM prints WHERE user_id = ? ORDER BY created_at", user.id);
-      const spent = await spentLast30d(user.id);
+      const starter = await one(`SELECT 1 AS x FROM payments WHERE user_id = ? AND product = 'starter' AND status IN ${COUNTED}`, user.id);
       const value = rows.reduce((sum, r) => sum + pointsOf(r.card_id) * r.count, 0);
       const friends = await one(
         "SELECT SUM(CASE WHEN referral_rewarded > 0 THEN 1 ELSE 0 END) AS joined, SUM(CASE WHEN referral_rewarded = 0 THEN 1 ELSE 0 END) AS waiting FROM users WHERE referred_by = ?",
@@ -427,7 +425,8 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
         collection: Object.fromEntries(rows.map((r) => [r.card_id, r.count])),
         prints: prints.map((p) => ({ cardId: p.card_id, serial: p.serial })),
         value,
-        spendLeft: Math.max(0, RULES.spendCap30d - spent),
+        starterAvailable: !starter,
+        pity: { left: Math.max(1, RULES.pity - (user.since_legend || 0)), of: RULES.pity },
         invite: { joined: friends?.joined || 0, waiting: friends?.waiting || 0 },
         daily: (({ streak, claimedToday, nextDay }) => ({ streak, claimedToday, nextDay }))(dailyState(user, now())),
         quests: (({ list, bonus }) => ({ list, bonus }))(questState(user, now())),
@@ -571,8 +570,17 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
         }
       }
 
+      // Geluksmeter: is het garantie-ei aan de beurt en zit er geen Legendarische kaart in, dan wordt de laatste kaart Legendarisch.
+      const drawn = drawPack(random);
+      const hasLegend = (keys) => keys.some((k) => parseKey(k).card.rarity === "icoon");
+      if ((user.since_legend || 0) + 1 >= RULES.pity && !hasLegend(drawn)) {
+        const legends = CARDS.filter((c) => c.rarity === "icoon");
+        const { variant } = parseKey(drawn[drawn.length - 1]);
+        drawn[drawn.length - 1] = keyOf(legends[Math.floor(random() * legends.length)].id, variant);
+      }
+      await run("UPDATE users SET since_legend = ? WHERE id = ?", hasLegend(drawn) ? 0 : (user.since_legend || 0) + 1, user.id);
       const cards = [];
-      for (const key of drawPack(random)) {
+      for (const key of drawn) {
         const { card, variant } = parseKey(key);
         if (variant !== "kristal") {
           cards.push({ key });
@@ -657,7 +665,7 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
       const product = PRODUCTS[productId];
       // Digitale inhoud: de koper moet vooraf instemmen met directe levering en afstand doen van de bedenktijd (art. 6:230p BW).
       if (body.waiver !== true) return fail(400, "Vink eerst aan dat je je aankoop direct wilt ontvangen.");
-      // Eerst het bedrag reserveren binnen de limiet (in één keer, ook bij gelijktijdige klikken), dan pas naar Mollie.
+      // Eerst de betaling vastleggen (een eenmalig product maar één keer, ook bij gelijktijdige klikken), dan pas naar Mollie.
       const ref = `${demoMode ? "demo" : "res"}_${randomHex(12)}`;
       const [, reserved] = await db.batch([
         lock(`pay:${user.id}`),
@@ -665,13 +673,11 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
           .prepare(
             `INSERT INTO payments (id, user_id, product, amount, status, created_at)
              SELECT CAST(? AS TEXT), CAST(? AS TEXT), CAST(? AS TEXT), CAST(? AS INTEGER), 'reserving', CAST(? AS BIGINT)
-             WHERE (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE user_id = ? AND status IN ${COUNTED} AND created_at > ?) + ? <= ?`
+             WHERE ? = 0 OR NOT EXISTS (SELECT 1 FROM payments WHERE user_id = ? AND product = ? AND status IN ${COUNTED})`
           )
-          .bind(ref, user.id, productId, product.price, now(), user.id, now() - 30 * DAY, product.price, RULES.spendCap30d),
+          .bind(ref, user.id, productId, product.price, now(), product.once ? 1 : 0, user.id, productId),
       ]);
-      if (reserved.meta.changes !== 1) {
-        return fail(429, `Je zit aan je limiet van €${RULES.spendCap30d / 100} per 30 dagen. Dat is er om je te beschermen.`);
-      }
+      if (reserved.meta.changes !== 1) return fail(409, "Het starterspakket kun je maar één keer kopen.");
       if (demoMode) {
         await fulfil(ref);
         return json({ url: "/#/winkel?betaald=1" });

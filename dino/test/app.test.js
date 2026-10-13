@@ -155,16 +155,21 @@ test("seizoenspas via Mollie geeft snellere gratis eieren", async () => {
   assert.equal(me.packs.max, RULES.premium.max);
 });
 
-test("uitgavegrens van €100 per 30 dagen", async () => {
-  const { client, tick } = setup();
+test("geen bestedingslimiet; starterspakket maar één keer per account", async () => {
+  const { client } = setup();
   const a = client();
-  await register(a, "grens");
-  for (let i = 0; i < 5; i++) assert.equal((await a("POST", "/api/checkout", { waiver: true, product: "eieren30" })).status, 200); // 5 × 17,99
-  assert.equal((await a("POST", "/api/checkout", { waiver: true, product: "eieren30" })).status, 429);
-  assert.equal((await a("POST", "/api/checkout", { waiver: true, product: "eieren5" })).status, 200); // 89,95 + 3,99 past nog
-  tick(31 * 24 * HOUR);
-  await a("POST", "/api/login", { username: "grens", email: "grens@test.nl", password: "geheim123" }); // sessie was verlopen
-  assert.equal((await a("POST", "/api/checkout", { waiver: true, product: "eieren30" })).status, 200);
+  await register(a, "koper");
+  assert.equal((await a("GET", "/api/me")).body.starterAvailable, true);
+  for (let i = 0; i < 8; i++) assert.equal((await a("POST", "/api/checkout", { waiver: true, product: "eieren30" })).status, 200); // € 143,92
+  assert.equal((await a("POST", "/api/checkout", { waiver: true, product: "starter" })).status, 200);
+  assert.equal((await a("POST", "/api/checkout", { waiver: true, product: "starter" })).status, 409);
+  const me = (await a("GET", "/api/me")).body;
+  assert.equal(me.packs.bought, 8 * 30 + 10);
+  assert.equal(me.starterAvailable, false);
+  // Een ander account kan het starterspakket wel gewoon kopen.
+  const b = client();
+  await register(b, "nieuwkoper");
+  assert.equal((await b("POST", "/api/checkout", { waiver: true, product: "starter" })).status, 200);
 });
 
 test("verstenen en maken: fossielen, geen Oerkristal, geen eieren van fossielen", async () => {
@@ -320,13 +325,13 @@ test("ranglijst: hoogste verzamelwaarde bovenaan, eigen plek erbij", async () =>
   assert.equal((await c("GET", "/api/leaderboard")).body.mine.score, before - 10 + gained);
 });
 
-test("gelijktijdig: bestedingslimiet, registraties per netwerk en dezelfde naam houden stand", async () => {
+test("gelijktijdig: starterspakket, registraties per netwerk en dezelfde naam houden stand", async () => {
   const { client } = setup();
   const a = client();
   await register(a, "haast");
-  const buys = await Promise.all(Array.from({ length: 12 }, () => a("POST", "/api/checkout", { waiver: true, product: "eieren30" })));
-  assert.equal(buys.filter((r) => r.status === 200).length, 5); // 5 × 17,99 past onder €100
-  assert.equal((await a("GET", "/api/me")).body.packs.bought, 150);
+  const buys = await Promise.all(Array.from({ length: 6 }, () => a("POST", "/api/checkout", { waiver: true, product: "starter" })));
+  assert.equal(buys.filter((r) => r.status === 200).length, 1); // eenmalig, ook bij gelijktijdig klikken
+  assert.equal((await a("GET", "/api/me")).body.packs.bought, 10);
 
   const ip = { "x-nf-client-connection-ip": "198.51.100.7" };
   const regs = await Promise.all(Array.from({ length: 8 }, (_, i) => client()("POST", "/api/register", { username: `snel${i}`, email: `snel${i}@test.nl`, password: "geheim123", adult: true }, ip)));
@@ -364,15 +369,15 @@ test("wachtwoord raden wordt na 10 pogingen per kwartier afgeremd", async () => 
   assert.equal((await b("POST", "/api/login", { login: "SLOT", password: "geheim123" })).status, 200);
 });
 
-test("Mollie: mislukte aanvraag geeft limiet terug, webhook vindt reservering, 2× pas = 60 dagen", async () => {
+test("Mollie: mislukte aanvraag geeft starterspakket terug, webhook vindt reservering, 2× pas = 60 dagen", async () => {
   const mollie = fakeMollie();
   const { client, db } = setup({ mollie });
   const a = client();
   await register(a, "mol");
   const create = mollie.createPayment;
   mollie.createPayment = async () => { throw new Error("Mollie 503"); };
-  assert.equal((await a("POST", "/api/checkout", { waiver: true, product: "eieren30" })).status, 500);
-  assert.equal((await a("GET", "/api/me")).body.spendLeft, RULES.spendCap30d); // reservering is weer vrijgegeven
+  assert.equal((await a("POST", "/api/checkout", { waiver: true, product: "starter" })).status, 500);
+  assert.equal((await a("GET", "/api/me")).body.starterAvailable, true); // reservering is weer vrijgegeven
   mollie.createPayment = create;
 
   // Twee passen tegelijk betaald: allebei geleverd.
@@ -605,4 +610,22 @@ test("verzameldoelen: aantallen en complete rijken, elke beloning één keer; li
   // Na verwijderen staat de speler er niet meer in
   await a("POST", "/api/account/delete", { password: "geheim123" });
   assert.equal((await client()("GET", "/api/feed")).body.items.length, 0);
+});
+
+test("geluksmeter: uiterlijk elk 30e ei een Legendarische kaart, daarna telt hij opnieuw", async () => {
+  // Nooit Legendarisch uit zichzelf (toeval 0.99 → Gewoon/Normaal).
+  const { client } = setup({ random: () => 0.99 });
+  const a = client();
+  await register(a, "pech");
+  await a("POST", "/api/checkout", { waiver: true, product: "eieren30" });
+  await a("POST", "/api/checkout", { waiver: true, product: "eieren30" });
+  const legendsIn = (cards) => cards.filter((c) => parseKey(c.key).card.rarity === "icoon").length;
+  for (let i = 1; i < RULES.pity; i++) {
+    const { body } = await a("POST", "/api/packs/open");
+    assert.equal(legendsIn(body.cards), 0, `ei ${i}`);
+  }
+  assert.equal((await a("GET", "/api/me")).body.pity.left, 1);
+  const { body } = await a("POST", "/api/packs/open");
+  assert.equal(legendsIn(body.cards), 1);
+  assert.equal((await a("GET", "/api/me")).body.pity.left, RULES.pity);
 });
