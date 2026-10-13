@@ -33,7 +33,7 @@ h2 { font-size: 1.6rem; }
 header.top {
   display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
   padding: calc(12px + env(safe-area-inset-top)) 16px 12px; border-bottom: 1px solid var(--line); background: rgba(18, 13, 8, .88);
-  position: sticky; top: 0; z-index: 5; backdrop-filter: blur(6px);
+  position: sticky; top: 0; z-index: 25; backdrop-filter: blur(6px);
 }
 .logo { font-family: "Oswald", sans-serif; font-size: 1.3rem; color: var(--ink); text-decoration: none; text-transform: uppercase; }
 nav { display: flex; gap: 4px; flex-wrap: wrap; }
