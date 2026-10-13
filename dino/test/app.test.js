@@ -117,7 +117,7 @@ const webhook = (call, id) => call("POST", "/api/mollie/webhook", `id=${id}`, { 
 
 test("eieren kopen via Mollie: pas na 'paid', één keer geleverd, gratis eieren eerst", async () => {
   const mollie = fakeMollie();
-  const { client } = setup({ mollie });
+  const { client, mails } = setup({ mollie });
   const a = client();
   await register(a, "kim");
   const { body } = await a("POST", "/api/checkout", { waiver: true, product: "eieren5" });
@@ -129,6 +129,12 @@ test("eieren kopen via Mollie: pas na 'paid', één keer geleverd, gratis eieren
   await webhook(a, "tr_1");
   await webhook(a, "tr_1"); // dubbele melding levert niet nog eens
   assert.equal((await a("GET", "/api/me")).body.packs.bought, 5);
+  // Precies één bevestigingsmail, met afstand van het herroepingsrecht.
+  const receipts = mails.filter((m) => m.subject.includes("bevestiging van je aankoop"));
+  assert.equal(receipts.length, 1);
+  assert.equal(receipts[0].to, "kim@test.nl");
+  assert.match(receipts[0].text, /€3,99/);
+  assert.match(receipts[0].text, /herroepingsrecht/);
 
   for (let i = 0; i < 7; i++) assert.equal((await a("POST", "/api/packs/open")).status, 200);
   const me = (await a("GET", "/api/me")).body;

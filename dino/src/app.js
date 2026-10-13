@@ -171,18 +171,37 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
 
   // Levert een betaald product precies één keer: leveren en 'paid' zetten gebeuren samen in één transactie.
   async function fulfil(paymentId) {
-    const pay = await one("SELECT user_id, product FROM payments WHERE id = ?", paymentId);
+    const pay = await one("SELECT user_id, product, amount FROM payments WHERE id = ?", paymentId);
     if (!pay || !Object.hasOwn(PRODUCTS, pay.product)) return;
     const product = PRODUCTS[pay.product];
     const notPaid = "EXISTS (SELECT 1 FROM payments WHERE id = ? AND status != 'paid')";
     const t = now();
-    await db.batch([
+    const [, credited] = await db.batch([
       db.prepare("UPDATE payments SET status = status WHERE id = ?").bind(paymentId), // slot: een tweede levering wacht hierop
       product.eggs
         ? db.prepare(`UPDATE users SET bought_eggs = bought_eggs + ? WHERE id = ? AND ${notPaid}`).bind(product.eggs, pay.user_id, paymentId)
         : db.prepare(`UPDATE users SET premium_until = (CASE WHEN premium_until > ? THEN premium_until ELSE ? END) + ? WHERE id = ? AND ${notPaid}`).bind(t, t, product.days * DAY, pay.user_id, paymentId),
       db.prepare("UPDATE payments SET status = 'paid' WHERE id = ?").bind(paymentId),
     ]);
+    if (credited?.meta.changes === 1) await sendReceipt(pay, product, paymentId, t);
+  }
+
+  // Bevestiging van de aankoop per e-mail, inclusief de afstand van het herroepingsrecht (verplicht bij digitale inhoud).
+  async function sendReceipt(pay, product, paymentId, t) {
+    const user = await one("SELECT username, email FROM users WHERE id = ?", pay.user_id);
+    if (!user?.email) return;
+    const euro = `€${(pay.amount / 100).toFixed(2).replace(".", ",")}`;
+    const date = new Date(t).toLocaleString("nl-NL", { timeZone: "Europe/Amsterdam", dateStyle: "long", timeStyle: "short" });
+    const what = product.eggs ? `${product.eggs} eieren staan nu in je account.` : `Je Seizoenspas is actief (${product.days} dagen).`;
+    const waiver = "Je hebt vóór de betaling aangegeven dat je de aankoop direct wilt ontvangen en dat je daardoor afziet van je herroepingsrecht (14 dagen bedenktijd). De aankoop is direct geleverd.";
+    await mailer
+      .send({
+        to: user.email,
+        subject: `${GAME_NAME}: bevestiging van je aankoop (${product.label})`,
+        text: `Hoi ${user.username},\n\nBedankt voor je aankoop!\n\nProduct: ${product.label}\nBedrag: ${euro} (inclusief eventuele btw)\nDatum: ${date}\nBetaalnummer: ${paymentId}\n\n${what}\n\n${waiver}\n\nVragen? Kijk op de site onder Voorwaarden voor de contactgegevens.\n\nVeel plezier met uitbroeden! 🦖\n${GAME_NAME}`,
+        html: `<p>Hoi ${user.username},</p><p>Bedankt voor je aankoop!</p><table cellpadding="4" style="border-collapse:collapse"><tr><td><b>Product</b></td><td>${product.label}</td></tr><tr><td><b>Bedrag</b></td><td>${euro} (inclusief eventuele btw)</td></tr><tr><td><b>Datum</b></td><td>${date}</td></tr><tr><td><b>Betaalnummer</b></td><td>${paymentId}</td></tr></table><p>${what}</p><p style="color:#555">${waiver}</p><p>Veel plezier met uitbroeden! 🦖<br>${GAME_NAME}</p>`,
+      })
+      .catch((err) => console.error("Aankoopbevestiging niet verstuurd:", err.message));
   }
 
   async function checkMolliePayment(paymentId) {
