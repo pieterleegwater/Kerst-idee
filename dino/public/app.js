@@ -344,7 +344,7 @@ function authView() {
       el("input", { id: "p", name: "password", type: "password", autocomplete: mode === "login" ? "current-password" : "new-password", required: true, minlength: 8 }),
       mode === "login" ? el("p", { class: "small" }, el("a", { href: "#/vergeten" }, "Wachtwoord vergeten?")) : null,
       mode === "register" ? el("input", { name: "website", class: "hp", tabindex: "-1", autocomplete: "off", "aria-hidden": "true" }) : null,
-      mode === "register" ? el("label", { class: "check" }, el("input", { type: "checkbox", name: "adult", required: true }), "Ik ben 18 jaar of ouder, snap dat kaarten geen geldwaarde hebben en ga akkoord met de ", el("a", { href: "#/voorwaarden", target: "_blank" }, "voorwaarden"), " en het ", el("a", { href: "#/privacy", target: "_blank" }, "privacybeleid"), ".") : null,
+      mode === "register" ? el("label", { class: "check" }, el("input", { type: "checkbox", name: "adult", required: true }), el("span", {}, "Ik ben 18 jaar of ouder, snap dat kaarten geen geldwaarde hebben en ga akkoord met de ", el("a", { href: "#/voorwaarden", target: "_blank" }, "voorwaarden"), " en het ", el("a", { href: "#/privacy", target: "_blank" }, "privacybeleid"), ".")) : null,
       err,
       el("button", { class: "btn", type: "submit" }, mode === "register" ? "Start met 2 gratis eieren" : "Inloggen")
     );
