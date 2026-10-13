@@ -31,7 +31,9 @@ CREATE TABLE IF NOT EXISTS users (
   realms_claimed INTEGER NOT NULL DEFAULT 0,
   goals_claimed INTEGER NOT NULL DEFAULT 0,
   -- Geluksmeter: eieren sinds de laatste Legendarische kaart.
-  since_legend INTEGER NOT NULL DEFAULT 0
+  since_legend INTEGER NOT NULL DEFAULT 0,
+  -- Gouden Eieren (betere kansen), alleen te koop.
+  gold_eggs INTEGER NOT NULL DEFAULT 0 CHECK (gold_eggs >= 0)
 );
 CREATE INDEX IF NOT EXISTS users_referred_by ON users (referred_by, referral_rewarded);
 CREATE INDEX IF NOT EXISTS users_score ON users (score DESC);

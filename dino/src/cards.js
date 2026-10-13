@@ -121,23 +121,36 @@ export const BY_RARITY = Object.fromEntries(Object.keys(RARITIES).map((r) => [r,
 export const PACK_SIZE = 5;
 const LAST_CARD_ODDS = { icoon: 0.03, goud: 0.2, zilver: 0.77, brons: 0 };
 
+// Soorten eieren. Gratis en gewone gekochte eieren zijn "normaal"; het Gouden Ei heeft betere kansen.
+// Alle kansen staan openbaar op de pagina Kansen & regels.
+export const EGG_TYPES = {
+  normaal: { label: "Ei", rarity: null, last: LAST_CARD_ODDS, variants: null },
+  goud: {
+    label: "Gouden Ei",
+    rarity: { icoon: 0.05, goud: 0.2, zilver: 0.35, brons: 0.4 }, // 5× zo vaak Legendarisch
+    last: { icoon: 0.15, goud: 0.85, zilver: 0, brons: 0 }, // laatste kaart minstens Episch
+    variants: { kristal: 0.001, prisma: 0.015, goud: 0.06, holo: 0.2 },
+  },
+};
+
 // Trek een pakje. `random` geeft [0,1); in productie crypto-random.
-// De laatste kaart is altijd minimaal Zeldzaam.
-export function drawPack(random) {
+// De laatste kaart is altijd minimaal Zeldzaam (bij een Gouden Ei minimaal Episch).
+export function drawPack(random, type = "normaal") {
+  const egg = EGG_TYPES[type] || EGG_TYPES.normaal;
   const pick = (list) => list[Math.floor(random() * list.length)];
   const order = ["icoon", "goud", "zilver", "brons"];
   const rollRarity = (last) => {
-    const odds = last ? LAST_CARD_ODDS : Object.fromEntries(order.map((k) => [k, RARITIES[k].odds]));
+    const odds = last ? egg.last : egg.rarity || Object.fromEntries(order.map((k) => [k, RARITIES[k].odds]));
     let r = random();
     for (const k of order) {
       if (r < odds[k]) return k;
       r -= odds[k];
     }
-    return last ? "zilver" : "brons";
+    return last ? (type === "goud" ? "goud" : "zilver") : "brons";
   };
   return Array.from({ length: PACK_SIZE }, (_, i) => {
     const card = pick(BY_RARITY[rollRarity(i === PACK_SIZE - 1)]);
-    return keyOf(card.id, rollVariant(random));
+    return keyOf(card.id, rollVariant(random, egg.variants));
   });
 }
 
@@ -159,11 +172,12 @@ export const KRISTAL_CAP = 25;
 // Verzamelwaarde in punten (geen geld): zeldzaamheid × afwerking.
 export const RARITY_POINTS = { brons: 1, zilver: 3, goud: 10, icoon: 40 };
 
-export function rollVariant(random) {
+export function rollVariant(random, odds = null) {
   let r = random();
   for (const k of VARIANT_ORDER.slice(0, 4)) {
-    if (r < VARIANTS[k].odds) return k;
-    r -= VARIANTS[k].odds;
+    const p = odds ? odds[k] : VARIANTS[k].odds;
+    if (r < p) return k;
+    r -= p;
   }
   return "normaal";
 }
@@ -185,6 +199,11 @@ export const PUBLISHED_ODDS = {
   laatsteKaart: LAST_CARD_ODDS,
   get afwerking() {
     return Object.fromEntries(Object.entries(VARIANTS).map(([k, v]) => [k, v.odds]));
+  },
+  goudenEi: {
+    perKaart: EGG_TYPES.goud.rarity,
+    laatsteKaart: EGG_TYPES.goud.last,
+    afwerking: { ...EGG_TYPES.goud.variants, normaal: 1 - Object.values(EGG_TYPES.goud.variants).reduce((a, b) => a + b, 0) },
   },
 };
 

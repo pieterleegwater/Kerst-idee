@@ -210,6 +210,32 @@ label { font-weight: 600; font-size: .92rem; }
   animation: wobble 3s ease-in-out infinite;
 }
 .pack.empty { filter: grayscale(1) brightness(.5); cursor: default; box-shadow: none; animation: none; }
+/* Gouden Ei */
+.panel.gold-shop { border: 2px solid #ffd166; margin-bottom: 18px; background: radial-gradient(circle at 50% 0%, rgba(255, 209, 102, .18), transparent 60%), var(--bg2); }
+.panel.gold-shop h2 { margin-top: 0; color: #ffd166; }
+.gold-compare { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0 18px; text-align: center; }
+.gold-compare div { border: 1px solid var(--line); border-radius: 12px; padding: 10px 6px; display: grid; gap: 2px; }
+.gold-compare b { font: 700 1.8rem "Oswald"; color: #ffd166; }
+.gold-compare span { font-size: .8rem; color: var(--muted); }
+.product.goldp { border-color: #ffd166; }
+.product.goldp .eggs { filter: sepia(1) saturate(4) hue-rotate(-12deg) brightness(1.1); }
+th.gold-col, td.gold-col { color: #ffd166; }
+.egg-row { display: flex; justify-content: center; align-items: flex-end; gap: 22px; margin: 18px 0; }
+.egg-slot { display: grid; justify-items: center; gap: 6px; }
+.egg-slot small { color: var(--muted); font-weight: 700; font-size: .8rem; }
+.egg-slot .gold-label { color: #ffd166; }
+.egg-row .pack { margin: 0; }
+.pack.gold {
+  background: radial-gradient(circle at 30% 30%, #fff6c8 0 5px, transparent 6px), radial-gradient(circle at 68% 58%, #fff3b0 0 7px, transparent 8px),
+    radial-gradient(circle at 42% 78%, #fff6c8 0 4px, transparent 5px), conic-gradient(from 200deg at 35% 25%, #fff3b0, #ffd166, #e0a100, #ffcf40, #fff3b0);
+  border-color: #fff1a8; color: #5a3a00; box-shadow: 0 0 70px rgba(255, 209, 102, .75), inset -14px -18px 30px rgba(140, 90, 0, .45);
+  text-decoration: none; position: relative;
+}
+.pack.gold::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, .7) 50%, transparent 65%); background-size: 250% 100%; animation: sweep 2.6s ease-in-out infinite; pointer-events: none; }
+.pack.gold .gcount { position: absolute; top: -6px; right: -6px; background: #e63946; color: #fff; border: 2px solid #fff; border-radius: 99px; padding: 2px 9px; font: 800 .95rem "Inter"; }
+.pack.gold.teaser { width: 110px; font-size: .8rem; opacity: .8; animation: none; box-shadow: 0 0 30px rgba(255, 209, 102, .45), inset -8px -10px 18px rgba(140, 90, 0, .45); }
+.pack.gold.teaser:hover { opacity: 1; }
+@media (max-width: 760px) { .egg-row { gap: 14px; } .egg-row.has-gold .pack { width: 150px; } }
 @keyframes wobble { 0%, 80%, 100% { transform: rotate(0); } 85% { transform: rotate(-4deg); } 90% { transform: rotate(4deg); } 95% { transform: rotate(-2deg); } }
 
 /* Animaties (fx.js) */

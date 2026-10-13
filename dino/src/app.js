@@ -44,6 +44,9 @@ export const PRODUCTS = {
   eieren5: { label: "5 eieren", price: 399, eggs: 5 },
   eieren12: { label: "12 eieren", price: 799, eggs: 12, tag: "Meest gekozen" },
   eieren30: { label: "30 eieren", price: 1799, eggs: 30, tag: "Beste prijs per ei" },
+  // Gouden Eieren: betere kansen op zeldzame kaarten (zie EGG_TYPES in cards.js).
+  goud3: { label: "3 Gouden Eieren", price: 499, goldEggs: 3 },
+  goud10: { label: "10 Gouden Eieren", price: 1499, goldEggs: 10, tag: "Beste deal" },
   pass: { label: "Seizoenspas (30 dagen)", price: 499, days: 30 },
 };
 
@@ -178,6 +181,8 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
       db.prepare("UPDATE payments SET status = status WHERE id = ?").bind(paymentId), // slot: een tweede levering wacht hierop
       product.eggs
         ? db.prepare(`UPDATE users SET bought_eggs = bought_eggs + ? WHERE id = ? AND ${notPaid}`).bind(product.eggs, pay.user_id, paymentId)
+        : product.goldEggs
+        ? db.prepare(`UPDATE users SET gold_eggs = gold_eggs + ? WHERE id = ? AND ${notPaid}`).bind(product.goldEggs, pay.user_id, paymentId)
         : db.prepare(`UPDATE users SET premium_until = (CASE WHEN premium_until > ? THEN premium_until ELSE ? END) + ? WHERE id = ? AND ${notPaid}`).bind(t, t, product.days * DAY, pay.user_id, paymentId),
       db.prepare("UPDATE payments SET status = 'paid' WHERE id = ?").bind(paymentId),
     ]);
@@ -190,7 +195,7 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
     if (!user?.email) return;
     const euro = `€${(pay.amount / 100).toFixed(2).replace(".", ",")}`;
     const date = new Date(t).toLocaleString("nl-NL", { timeZone: "Europe/Amsterdam", dateStyle: "long", timeStyle: "short" });
-    const what = product.eggs ? `${product.eggs} eieren staan nu in je account.` : `Je Seizoenspas is actief (${product.days} dagen).`;
+    const what = product.eggs ? `${product.eggs} eieren staan nu in je account.` : product.goldEggs ? `${product.goldEggs} Gouden Eieren staan nu in je account.` : `Je Seizoenspas is actief (${product.days} dagen).`;
     const waiver = "Je hebt vóór de betaling aangegeven dat je de aankoop direct wilt ontvangen en dat je daardoor afziet van je herroepingsrecht (14 dagen bedenktijd). De aankoop is direct geleverd.";
     await mailer
       .send({
@@ -418,7 +423,7 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
       return json({
         username: user.username,
         email: user.email || null,
-        packs: { available: pack.credits, max: pack.max, nextAt: pack.nextAt, bought: user.bought_eggs },
+        packs: { available: pack.credits, max: pack.max, nextAt: pack.nextAt, bought: user.bought_eggs, gold: user.gold_eggs || 0 },
         premiumUntil: user.premium_until > now() ? user.premium_until : null,
         packsOpened: user.packs_opened,
         fossils: user.fossils,
@@ -460,7 +465,7 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
       const data = {
         exportedAt: new Date(now()).toISOString(),
         account: { username: user.username, email: user.email || null, createdAt: user.created_at, invitedByAFriend: !!user.referred_by },
-        game: { packsOpened: user.packs_opened, fossils: user.fossils, boughtEggsLeft: user.bought_eggs, score: user.score, premiumUntil: user.premium_until > now() ? new Date(user.premium_until).toISOString() : null },
+        game: { packsOpened: user.packs_opened, fossils: user.fossils, boughtEggsLeft: user.bought_eggs, goldEggsLeft: user.gold_eggs || 0, score: user.score, premiumUntil: user.premium_until > now() ? new Date(user.premium_until).toISOString() : null },
         collection: Object.fromEntries(collection.map((r) => [r.card_id, r.count])),
         oerkristal: prints.map((p) => ({ card: p.card_id, serial: p.serial, at: new Date(p.created_at).toISOString() })),
         payments: payments.map((p) => ({ product: p.product, amountEuro: p.amount / 100, status: p.status, at: new Date(p.created_at).toISOString() })),
@@ -475,7 +480,7 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
       if (!(await verifyPassword(String(body.password || ""), user.pass_salt, user.pass_hash))) return fail(401, "Je wachtwoord klopt niet.");
       const { hash, salt } = await hashPassword(randomHex(32)); // niemand kan hier nog mee inloggen
       await db.batch([
-        db.prepare("UPDATE users SET username = ?, email = NULL, pass_hash = ?, pass_salt = ?, score = 0, fossils = 0, bought_eggs = 0, pack_credits = 0, premium_until = 0, reg_ip_hash = NULL, referred_by = NULL WHERE id = ?").bind(`verwijderd_${randomHex(6)}`, hash, salt, user.id),
+        db.prepare("UPDATE users SET username = ?, email = NULL, pass_hash = ?, pass_salt = ?, score = 0, fossils = 0, bought_eggs = 0, gold_eggs = 0, pack_credits = 0, premium_until = 0, reg_ip_hash = NULL, referred_by = NULL WHERE id = ?").bind(`verwijderd_${randomHex(6)}`, hash, salt, user.id),
         db.prepare("DELETE FROM collection WHERE user_id = ?").bind(user.id),
         db.prepare("DELETE FROM pulls WHERE user_id = ?").bind(user.id),
         db.prepare("DELETE FROM password_resets WHERE user_id = ?").bind(user.id),
@@ -545,10 +550,14 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
     },
 
     // Gratis eieren gaan eerst; daarna de gekochte.
-    "POST /api/packs/open": async (_req, _body, user) => {
+    "POST /api/packs/open": async (_req, body, user) => {
       const pack = packState(user, now());
+      const eggType = body.type === "goud" ? "goud" : "normaal";
       let res;
-      if (pack.credits >= 1) {
+      if (eggType === "goud") {
+        res = await run("UPDATE users SET gold_eggs = gold_eggs - 1, packs_opened = packs_opened + 1 WHERE id = ? AND gold_eggs >= 1", user.id);
+        if (res.meta.changes !== 1) return fail(429, "Je hebt geen Gouden Ei. Je koopt ze in de winkel.");
+      } else if (pack.credits >= 1) {
         const nextAt = pack.credits >= pack.max ? now() : pack.at;
         // Optimistisch slot: lukt alleen als niemand tegelijk een ei opende.
         res = await run(
@@ -571,7 +580,7 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
       }
 
       // Geluksmeter: is het garantie-ei aan de beurt en zit er geen Legendarische kaart in, dan wordt de laatste kaart Legendarisch.
-      const drawn = drawPack(random);
+      const drawn = drawPack(random, eggType);
       const hasLegend = (keys) => keys.some((k) => parseKey(k).card.rarity === "icoon");
       if ((user.since_legend || 0) + 1 >= RULES.pity && !hasLegend(drawn)) {
         const legends = CARDS.filter((c) => c.rarity === "icoon");
@@ -606,7 +615,7 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
           .map(({ key, serial }) => db.prepare("INSERT INTO pulls (user_id, card_key, serial, created_at) VALUES (?, ?, ?, ?)").bind(user.id, key, serial ?? null, now())),
       ]);
       await bumpQuests(user.id, { eggs: 1, rare: cards.filter(({ key }) => isRare(parseKey(key).card, parseKey(key).variant)).length });
-      return json({ cards });
+      return json({ cards, type: eggType });
     },
 
     // Versteen kaarten tot fossielen.

@@ -97,10 +97,10 @@ export function termsHtml({ pity, passDays }) {
 
 <h2>3. Kopen</h2>
 <ul>
-<li>Je kunt eieren en de Seizoenspas kopen. Alle prijzen staan in euro's, inclusief eventuele btw. Je betaalt via Mollie (bijvoorbeeld iDEAL, Bancontact of creditcard).</li>
+<li>Je kunt eieren, Gouden Eieren en de Seizoenspas kopen. Alle prijzen staan in euro's, inclusief eventuele btw. Je betaalt via Mollie (bijvoorbeeld iDEAL, Bancontact of creditcard).</li>
 <li>Je aankoop staat direct na de betaling in je account.</li>
 <li>De Seizoenspas geldt ${passDays} dagen en wordt niet automatisch verlengd.</li>
-<li>Gekochte eieren hebben precies dezelfde kansen als gratis eieren. Alle kansen staan op <a href="#/regels">Kansen &amp; regels</a>.</li>
+<li>Gewone gekochte eieren hebben precies dezelfde kansen als gratis eieren. Gouden Eieren hebben betere kansen op zeldzame kaarten. Alle kansen van beide soorten staan op <a href="#/regels">Kansen &amp; regels</a>.</li>
 <li>Het Starterspakket kun je één keer per account kopen.</li>
 <li>Geluksmeter: in uiterlijk elk ${pity}e ei (gratis of gekocht) zit gegarandeerd een Legendarische kaart.</li>
 </ul>

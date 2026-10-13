@@ -400,9 +400,13 @@ function packsView() {
   const wrap = el("div", { class: "packs-hero" });
   const feed = feedBar();
   const render = () => {
-    const { available, max, nextAt, bought } = me.packs;
+    const { available, max, nextAt, bought, gold = 0 } = me.packs;
     const total = available + bought;
     const pack = el("div", { class: `pack${total ? "" : " empty"}`, role: "button", tabindex: 0, "aria-label": "Broed ei uit" }, el("span", {}, catalog.game, el("br"), `Seizoen ${catalog.season}`));
+    // Gouden Ei: apart te openen als je er een hebt; anders een klein lokkertje naar de winkel.
+    const goldPack = gold
+      ? el("div", { class: "pack gold", role: "button", tabindex: 0, "aria-label": "Open een Gouden Ei" }, el("span", {}, "Gouden", el("br"), "Ei"), el("b", { class: "gcount" }, `×${gold}`))
+      : el("a", { class: "pack gold teaser", href: "#/winkel", "aria-label": "Gouden Eieren in de winkel" }, el("span", {}, "Gouden", el("br"), "Ei"));
     const countdown = el("p", { class: "muted" });
     const tickTimer = () => {
       if (!nextAt) return (countdown.textContent = `Je eieren zijn vol (${max}/${max}). Broed ze uit!`);
@@ -413,33 +417,41 @@ function packsView() {
     tickTimer();
     clearInterval(packsView.timer);
     packsView.timer = setInterval(tickTimer, 30000);
-    const open = async () => {
-      if (!(me.packs.available + me.packs.bought) || pack.classList.contains("busy")) return;
-      pack.classList.add("busy");
-      startShake(pack);
+    const open = (egg, type) => async () => {
+      const have = type === "goud" ? me.packs.gold : me.packs.available + me.packs.bought;
+      if (!have || wrap.querySelector(".pack.busy")) return;
+      egg.classList.add("busy");
+      startShake(egg);
       try {
         const before = { ...me.collection };
-        const { cards } = await api("/api/packs/open", {});
+        const { cards } = await api("/api/packs/open", type === "goud" ? { type } : {});
         await refreshMe();
-        await hatch(pack, bestTier(cards, parseKey));
+        await hatch(egg, bestTier(cards, parseKey));
         showReveal(cards, before);
       } catch (ex) {
         toast(ex.message);
-        pack.classList.remove("busy", "shake", "shake-hard");
+        egg.classList.remove("busy", "shake", "shake-hard");
       }
     };
-    pack.addEventListener("click", open);
-    pack.addEventListener("keydown", (e) => e.key === "Enter" && open());
+    for (const [egg, type] of [[pack, "normaal"], ...(gold ? [[goldPack, "goud"]] : [])]) {
+      egg.addEventListener("click", open(egg, type));
+      egg.addEventListener("keydown", (e) => e.key === "Enter" && open(egg, type)());
+    }
     put(
       wrap,
       "replaceChildren",
       feed,
       emailBanner(),
-      el("h1", {}, total ? `${total} ${total > 1 ? "eieren" : "ei"} klaar` : "Even geduld…"),
+      el("h1", {}, total + gold ? `${total + gold} ${total + gold > 1 ? "eieren" : "ei"} klaar` : "Even geduld…"),
       dailyBar(),
       bought ? el("p", { class: "muted" }, `${available} gratis + ${bought} extra. Gratis eieren worden eerst uitgebroed.`) : null,
       el("p", { class: "muted" }, "Tik op het ei om het uit te broeden. Gloeit een kaart al op de achterkant? Dan zit er iets bijzonders in…"),
-      pack,
+      el(
+        "div",
+        { class: `egg-row${gold ? " has-gold" : ""}` },
+        el("div", { class: "egg-slot" }, pack, el("small", {}, "Gewoon ei")),
+        el("div", { class: "egg-slot" }, goldPack, el("small", { class: "gold-label" }, gold ? "Gouden Ei · 5× kans op Legendarisch" : "✨ Gouden Ei: 5× kans →"))
+      ),
       countdown,
       el("p", { class: "muted" }, `Verzamelwaarde: `, el("b", {}, `${me.value.toLocaleString("nl-NL")} punten`)),
       pityMeter(),
@@ -772,6 +784,9 @@ async function shopView(params) {
   };
   // Prijs per ei van het kleinste pakket, om het voordeel van grotere pakketten te tonen.
   const eggs = Object.entries(products).filter(([, p]) => p.eggs && !p.once);
+  const golds = Object.entries(products).filter(([, p]) => p.goldEggs);
+  const g = catalog.odds.goudenEi;
+  const times = (a, b) => `${Math.round(a / b)}×`;
   const base = Math.max(...eggs.map(([, p]) => p.price / p.eggs));
   const saving = (p) => Math.round((1 - p.price / p.eggs / base) * 100);
   const st = products.starter;
@@ -832,6 +847,40 @@ async function shopView(params) {
         el("button", { class: "btn", onclick: buy("pass") }, me.premiumUntil ? "Verlengen" : "Kopen")
       )
     ),
+    golds.length && g
+      ? el(
+          "div",
+          { class: "panel gold-shop" },
+          el("h2", {}, "✨ Gouden Eieren"),
+          el("p", {}, "Meer kans op de beste kaarten. In elk Gouden Ei zit minstens één ", el("b", {}, "Episch"), " of beter."),
+          el(
+            "div",
+            { class: "gold-compare" },
+            [
+              ["Legendarisch", catalog.odds.perKaart.icoon, g.perKaart.icoon],
+              ["Prisma", catalog.odds.afwerking.prisma, g.afwerking.prisma],
+              ["Oerkristal", catalog.odds.afwerking.kristal, g.afwerking.kristal],
+            ].map(([label, a, b]) => el("div", {}, el("b", {}, times(b, a)), el("span", {}, `kans op ${label}`)))
+          ),
+          el(
+            "div",
+            { class: "shop" },
+            golds.map(([id, p]) =>
+              el(
+                "div",
+                { class: `panel product goldp${p.tag ? " tagged" : ""}` },
+                p.tag ? el("span", { class: "ptag" }, p.tag) : null,
+                el("div", { class: "eggs" }, "🥚".repeat(Math.min(p.goldEggs, 5))),
+                el("h2", {}, p.label),
+                el("div", { class: "price" }, euro(p.price)),
+                el("p", { class: "muted" }, `${euro(Math.round(p.price / p.goldEggs))} per Gouden Ei`),
+                el("button", { class: "btn", onclick: buy(id) }, "Kopen")
+              )
+            )
+          ),
+          el("p", { class: "muted small" }, el("a", { href: "#/regels" }, "Bekijk alle kansen van gewone en Gouden Eieren →"))
+        )
+      : null,
     el(
       "div",
       { class: "panel" },
@@ -839,7 +888,7 @@ async function shopView(params) {
       el(
         "ul",
         {},
-        el("li", {}, "Gekochte eieren hebben precies dezelfde kansen als gratis eieren. ", el("a", { href: "#/regels" }, "Bekijk de kansen.")),
+        el("li", {}, "Gewone gekochte eieren hebben precies dezelfde kansen als gratis eieren. Gouden Eieren hebben betere kansen. ", el("a", { href: "#/regels" }, "Bekijk alle kansen.")),
         el("li", {}, `Geluksmeter: in uiterlijk elk ${rules.pity}e ei zit gegarandeerd een Legendarische kaart.`),
         el("li", {}, "Kaarten en fossielen hebben geen geldwaarde: je kunt ze niet verkopen, ruilen of uitbetalen, en met fossielen koop je geen eieren.")
       ),
@@ -1177,27 +1226,27 @@ function accountView() {
 
 function rulesView() {
   const pct = (x) => `${(x * 100).toFixed(0)}%`;
-  const { perKaart, laatsteKaart, afwerking } = catalog.odds;
+  const { perKaart, laatsteKaart, afwerking, goudenEi: g } = catalog.odds;
   return el(
     "div",
     { class: "panel" },
     el("h1", {}, "Kansen & regels"),
-    el("p", {}, "Een ei bevat 5 kaarten. Elke kaart krijgt eerst een zeldzaamheid en daarna, los daarvan, een afwerking."),
+    el("p", {}, "Een ei bevat 5 kaarten. Elke kaart krijgt eerst een zeldzaamheid en daarna, los daarvan, een afwerking. Gratis eieren en gewone gekochte eieren hebben precies dezelfde kansen. Het ✨ Gouden Ei (alleen te koop) heeft betere kansen; die staan ernaast."),
     el("h2", {}, "Zeldzaamheid"),
     el(
       "table",
       { class: "odds" },
-      el("tr", {}, el("th", {}, "Zeldzaamheid"), el("th", {}, "Kaart 1–4"), el("th", {}, "Kaart 5"), el("th", {}, "Aantal in set")),
-      Object.entries(catalog.rarities).map(([k, v]) => el("tr", {}, el("td", {}, v.label), el("td", {}, pct(perKaart[k])), el("td", {}, pct(laatsteKaart[k])), el("td", {}, String(catalog.cards.filter((c) => c.rarity === k).length))))
+      el("tr", {}, el("th", {}, "Zeldzaamheid"), el("th", {}, "Kaart 1–4"), el("th", {}, "Kaart 5"), el("th", { class: "gold-col" }, "Gouden Ei 1–4"), el("th", { class: "gold-col" }, "Gouden Ei 5"), el("th", {}, "In set")),
+      Object.entries(catalog.rarities).map(([k, v]) => el("tr", {}, el("td", {}, v.label), el("td", {}, pct(perKaart[k])), el("td", {}, pct(laatsteKaart[k])), el("td", { class: "gold-col" }, g ? pct(g.perKaart[k]) : "–"), el("td", { class: "gold-col" }, g ? pct(g.laatsteKaart[k]) : "–"), el("td", {}, String(catalog.cards.filter((c) => c.rarity === k).length))))
     ),
     el("h2", {}, "Afwerking (per kaart)"),
     el(
       "table",
       { class: "odds" },
-      el("tr", {}, el("th", {}, "Afwerking"), el("th", {}, "Kans"), el("th", {}, "Waarde ×"), el("th", {}, "Te maken met fossielen")),
+      el("tr", {}, el("th", {}, "Afwerking"), el("th", {}, "Kans"), el("th", { class: "gold-col" }, "Gouden Ei"), el("th", {}, "Waarde ×"), el("th", {}, "Te maken met fossielen")),
       VARIANT_ORDER.slice()
         .reverse()
-        .map((k) => el("tr", {}, el("td", {}, catalog.variants[k].label), el("td", {}, k === "normaal" ? pct(afwerking[k]) : oneIn(afwerking[k])), el("td", {}, `×${catalog.variants[k].mult}`), el("td", {}, k in catalog.fossils.craftMult ? "Ja" : "Nee, alleen in eieren")))
+        .map((k) => el("tr", {}, el("td", {}, catalog.variants[k].label), el("td", {}, k === "normaal" ? pct(afwerking[k]) : oneIn(afwerking[k])), el("td", { class: "gold-col" }, g ? (k === "normaal" ? pct(g.afwerking[k]) : oneIn(g.afwerking[k])) : "–"), el("td", {}, `×${catalog.variants[k].mult}`), el("td", {}, k in catalog.fossils.craftMult ? "Ja" : "Nee, alleen in eieren")))
     ),
     el("p", { class: "muted" }, `Oerkristal-kaarten zijn genummerd: van elke dino bestaan er wereldwijd maximaal ${catalog.kristalCap}. Is de oplage op, dan wordt een Oerkristal-trekking een Prisma. Verzamelwaarde is een puntentelling voor de lol en heeft geen geldwaarde.`),
     el("h2", {}, "Regels"),
@@ -1206,9 +1255,9 @@ function rulesView() {
       {},
       el("li", {}, "Alleen voor 18 jaar en ouder."),
       el("li", {}, "Kaarten zijn virtueel, hebben geen geldwaarde en kunnen niet voor geld worden gekocht, verkocht of uitbetaald."),
-      el("li", {}, "Gekochte en gratis eieren hebben exact dezelfde kansen."),
+      el("li", {}, "Gratis en gewone gekochte eieren hebben exact dezelfde kansen. Gouden Eieren hebben de betere kansen uit de tabellen hierboven."),
       el("li", {}, "Kaarten kun je niet ruilen of verkopen. Je kunt ze verstenen tot fossielen en daarmee een dino naar keuze maken (Normaal of Holo). Met fossielen koop je geen eieren."),
-      el("li", {}, `Geluksmeter: in uiterlijk elk ${catalog.rules.pity}e ei zit gegarandeerd een Legendarische kaart. Zat er al eerder een in, dan begint de teller opnieuw. Dit geldt voor gratis en gekochte eieren.`),
+      el("li", {}, `Geluksmeter: in uiterlijk elk ${catalog.rules.pity}e ei zit gegarandeerd een Legendarische kaart. Zat er al eerder een in, dan begint de teller opnieuw. Dit geldt voor alle eieren, ook Gouden Eieren.`),
       el("li", {}, "Handel in accounts voor geld is verboden en leidt tot blokkering."),
       el("li", {}, "De soorten zijn echte prehistorische dieren; namen, rijken en krachten zijn verzonnen en de afbeeldingen zijn met AI gemaakt. De weetjes op de kaarten kloppen wel!")
     )

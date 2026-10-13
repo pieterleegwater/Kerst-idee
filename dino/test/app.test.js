@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createApp, RULES, packState, dayIndex } from "../src/app.js";
-import { CARDS, BY_RARITY, drawPack, PACK_SIZE, parseKey, KRISTAL_CAP, pointsOf } from "../src/cards.js";
+import { CARDS, BY_RARITY, drawPack, PACK_SIZE, EGG_TYPES, parseKey, KRISTAL_CAP, pointsOf } from "../src/cards.js";
 import { testDb, testPgDb } from "./d1.js";
 
 const makeDb = process.env.DB === "pg" ? testPgDb : testDb;
@@ -628,4 +628,43 @@ test("geluksmeter: uiterlijk elk 30e ei een Legendarische kaart, daarna telt hij
   const { body } = await a("POST", "/api/packs/open");
   assert.equal(legendsIn(body.cards), 1);
   assert.equal((await a("GET", "/api/me")).body.pity.left, RULES.pity);
+});
+
+test("Gouden Eieren: kopen, apart openen, betere kansen en laatste kaart minstens Episch", async () => {
+  const { client } = setup();
+  const a = client();
+  await register(a, "goudzoeker");
+  assert.equal((await a("POST", "/api/packs/open", { type: "goud" })).status, 429); // nog geen Gouden Ei
+  assert.equal((await a("POST", "/api/checkout", { waiver: true, product: "goud3" })).status, 200);
+  let me = (await a("GET", "/api/me")).body;
+  assert.deepEqual([me.packs.gold, me.packs.bought, me.packs.available], [3, 0, 2]);
+  // Tegelijk openen: precies 3 lukken, gratis eieren blijven staan.
+  const opens = await Promise.all(Array.from({ length: 5 }, () => a("POST", "/api/packs/open", { type: "goud" })));
+  assert.equal(opens.filter((r) => r.status === 200).length, 3);
+  for (const r of opens.filter((r) => r.status === 200)) {
+    assert.equal(r.body.type, "goud");
+    assert.ok(["goud", "icoon"].includes(parseKey(r.body.cards.at(-1).key).card.rarity));
+  }
+  me = (await a("GET", "/api/me")).body;
+  assert.deepEqual([me.packs.gold, me.packs.available], [0, 2]);
+
+  // Kansen over veel trekkingen: Gouden Ei ~5× zo vaak Legendarisch als een gewoon ei.
+  let seed = 7;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const rate = (type) => {
+    let legends = 0;
+    let shiny = 0;
+    const n = 4000;
+    for (let i = 0; i < n; i++) for (const k of drawPack(rand, type)) {
+      const p = parseKey(k);
+      if (p.card.rarity === "icoon") legends++;
+      if (p.variant !== "normaal") shiny++;
+    }
+    return { legends: legends / (n * PACK_SIZE), shiny: shiny / (n * PACK_SIZE) };
+  };
+  const normal = rate("normaal");
+  const gold = rate("goud");
+  assert.ok(gold.legends / normal.legends > 4 && gold.legends / normal.legends < 9, JSON.stringify({ normal, gold }));
+  assert.ok(gold.shiny > normal.shiny * 2);
+  assert.equal(Object.keys(EGG_TYPES).join(), "normaal,goud");
 });
