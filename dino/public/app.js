@@ -387,6 +387,7 @@ function authView() {
     el(
       "div",
       {},
+      feedBar(),
       el("h1", {}, "Vang ze allemaal"),
       el("p", { class: "muted" }, `${catalog.cards.length} dino's uit ${catalog.groups.length} rijken. Broed elke dag gratis eieren uit, versteen dubbele kaarten tot fossielen en maak de dino die je mist. Jaag op Holo, Goudfolie, Prisma en de genummerde Oerkristal-kaarten: daarvan bestaan er maar ${catalog.kristalCap} per dino in de héle wereld.`),
       showcase
@@ -397,6 +398,7 @@ function authView() {
 
 function packsView() {
   const wrap = el("div", { class: "packs-hero" });
+  const feed = feedBar();
   const render = () => {
     const { available, max, nextAt, bought } = me.packs;
     const total = available + bought;
@@ -431,6 +433,7 @@ function packsView() {
     put(
       wrap,
       "replaceChildren",
+      feed,
       emailBanner(),
       el("h1", {}, total ? `${total} ${total > 1 ? "eieren" : "ei"} klaar` : "Even geduld…"),
       dailyBar(),
@@ -440,6 +443,8 @@ function packsView() {
       countdown,
       el("p", { class: "muted" }, `Verzamelwaarde: `, el("b", {}, `${me.value.toLocaleString("nl-NL")} punten`)),
       el("p", {}, el("a", { href: "#/winkel" }, total ? "Meer eieren of de Seizoenspas →" : "Niet wachten? Koop eieren →")),
+      questsPanel(),
+      installPanel(),
       inviteBox()
     );
   };
@@ -556,6 +561,7 @@ function albumView() {
     "div",
     {},
     el("h1", {}, "Mijn album"),
+    goalsPanel(),
     el("p", { class: "muted" }, `${ownedCards.length} van de ${catalog.cards.length} dino's (${pct}%) · ${special} glanskaarten · ${me.packsOpened} eieren uitgebroed · verzamelwaarde `, el("b", {}, `${me.value.toLocaleString("nl-NL")} punten`)),
     bar,
     filters,
@@ -616,7 +622,7 @@ async function leaderboardView() {
       "tr",
       { class: mine && r.username === mine.username ? "me" : "" },
       el("td", { class: "rank" }, medal(r.rank)),
-      el("td", {}, el("b", {}, r.username)),
+      el("td", {}, el("b", {}, r.username), r.realms ? el("span", { class: "badges", title: "Complete rijken" }, ` ${realmBadges(r.realms)}`) : null),
       el("td", { class: "num" }, `${r.score.toLocaleString("nl-NL")} pt`),
       el("td", { class: "num muted" }, `${r.eggs} 🥚`)
     )
@@ -812,6 +818,154 @@ async function shopView(params) {
   );
 }
 
+// ---------- Opdrachten, verzameldoelen, live-balk ----------
+const REALM_ICON = { vuur: "🌋", ijs: "❄️", jungle: "🌿", oceaan: "🌊", storm: "⚡", schaduw: "🌑" };
+const realmBadges = (mask) => catalog.groups.filter((_, i) => mask & (1 << i)).map((g) => REALM_ICON[g.id] || "🏅").join("");
+const rewardText = (r) => [r.eggs ? `${r.eggs} 🥚` : null, r.fossils ? `${r.fossils} 🦴` : null].filter(Boolean).join(" + ");
+
+// Beloning ophalen met animatie: botjes naar de teller, of een feestje bij eieren.
+async function claimReward(path, body, btn, title) {
+  btn.disabled = true;
+  const before = me.fossils;
+  try {
+    const r = await api(path, body);
+    if (r.eggs) celebrate(`+${r.eggs} ${r.eggs === 1 ? "EI" : "EIEREN"}!`, title, "c-goud");
+    if (r.fossils) await bonesToBank(btn, r.fossils, before);
+    await refreshMe();
+    setTimeout(() => route(true), r.eggs ? 900 : 0);
+  } catch (ex) {
+    toast(ex.message);
+    btn.disabled = false;
+  }
+}
+
+function questsPanel() {
+  const { list, bonus } = me.quests || {};
+  if (!list) return null;
+  const row = (label, progress, target, reward, done, claimed, onClaim) =>
+    el(
+      "div",
+      { class: `quest${claimed ? " claimed" : done ? " ready" : ""}` },
+      el("div", { class: "qtext" }, el("b", {}, label), el("div", { class: "qbar" }, el("i", { style: `width:${Math.round((progress / target) * 100)}%` })), el("small", {}, `${progress}/${target} · ${reward}`)),
+      claimed ? el("span", { class: "qdone" }, "✓") : done ? el("button", { class: "btn small", onclick: (e) => onClaim(e.currentTarget) }, "Ophalen") : null
+    );
+  const done = list.filter((q) => q.claimed).length;
+  return el(
+    "div",
+    { class: "panel quests" },
+    el("h2", {}, "🎯 Opdrachten van vandaag"),
+    list.map((q) => row(q.label, q.progress, q.target, `${q.fossils} 🦴`, q.progress >= q.target, q.claimed, (b) => claimReward("/api/quests/claim", { id: q.id }, b, "Opdracht voltooid"))),
+    row(`Bonus: alle 3 opdrachten`, done, 3, `${bonus.eggs} 🥚`, bonus.ready, bonus.claimed, (b) => claimReward("/api/quests/claim", { id: "bonus" }, b, "Alle opdrachten gehaald 🎯")),
+    el("p", { class: "muted small" }, "Elke nacht om 00:00 komen er nieuwe opdrachten.")
+  );
+}
+
+function goalsPanel() {
+  const g = me.goals;
+  if (!g) return null;
+  const total = catalog.cards.length;
+  const next = g.counts.find((c) => !c.claimed && g.unique < c.count);
+  const milestones = el(
+    "div",
+    { class: "milestones" },
+    g.counts.map((c, i) => {
+      const ready = g.unique >= c.count && !c.claimed;
+      return el(
+        "div",
+        { class: `mstone${c.claimed ? " claimed" : ready ? " ready" : ""}` },
+        el("b", {}, `${c.count}`),
+        el("small", {}, rewardText(c)),
+        c.claimed ? el("span", { class: "qdone" }, "✓") : ready ? el("button", { class: "btn small", onclick: (e) => claimReward("/api/goals/claim", { type: "count", index: i }, e.currentTarget, `${c.count} dino's verzameld`) }, "Ophalen") : null
+      );
+    })
+  );
+  const realms = el(
+    "div",
+    { class: "realm-goals" },
+    g.realms.map((r, i) => {
+      const realm = catalog.groups[i];
+      const ready = r.have >= r.total && !r.claimed;
+      return el(
+        "div",
+        { class: `rgoal${r.claimed ? " claimed" : ready ? " ready" : ""}` },
+        el("span", { class: "ricon" }, REALM_ICON[r.id] || "🏅"),
+        el("div", { class: "qtext" }, el("b", {}, realm.name), el("div", { class: "qbar" }, el("i", { style: `width:${Math.round((r.have / r.total) * 100)}%;background:linear-gradient(90deg,${realm.colors[0]},${realm.colors[1]})` })), el("small", {}, `${r.have}/${r.total} · compleet: ${rewardText(catalog.rules.realmReward)} + badge`)),
+        r.claimed ? el("span", { class: "qdone" }, "✓") : ready ? el("button", { class: "btn small", onclick: (e) => claimReward("/api/goals/claim", { type: "realm", index: i }, e.currentTarget, `${realm.name} compleet! ${REALM_ICON[r.id]}`) }, "Ophalen") : null
+      );
+    })
+  );
+  return el(
+    "details",
+    { class: "panel goals", open: g.counts.some((c) => !c.claimed && g.unique >= c.count) || g.realms.some((r) => !r.claimed && r.have >= r.total) || null },
+    el("summary", {}, el("h2", {}, "🏆 Verzameldoelen"), el("span", { class: "muted small" }, next ? `Nog ${next.count - g.unique} tot ${rewardText(next)}` : `${g.unique}/${total}`)),
+    milestones,
+    el("p", { class: "muted small" }, "Maak een rijk compleet voor 2 eieren en een badge naast je naam op de ranglijst."),
+    realms
+  );
+}
+
+// Live-balk met bijzondere vondsten van andere spelers.
+function feedBar() {
+  const bar = el("div", { class: "feed", hidden: true });
+  api("/api/feed")
+    .then(({ items }) => {
+      if (!items.length) return;
+      const ago = (t) => {
+        const m = Math.round((Date.now() - t) / 60000);
+        return m < 1 ? "net" : m < 60 ? `${m} min geleden` : m < 1440 ? `${Math.round(m / 60)} uur geleden` : `${Math.round(m / 1440)} d geleden`;
+      };
+      const entries = items.map((it) => {
+        const p = parseKey(it.key);
+        if (!p) return null;
+        const v = p.variant !== "normaal" ? `${catalog.variants[p.variant].label} ` : "";
+        return el("span", { class: `fitem v-${p.variant}` }, "✨ ", el("b", {}, it.user), ` vond ${v}`, el("b", {}, p.card.name), it.serial ? ` #${String(it.serial).padStart(2, "0")}` : "", el("small", {}, ` · ${ago(it.at)}`));
+      }).filter(Boolean);
+      const track = el("div", { class: "ftrack" }, entries, entries.map((e) => e.cloneNode(true)));
+      track.style.animationDuration = `${Math.max(20, entries.length * 6)}s`;
+      bar.replaceChildren(el("span", { class: "flabel" }, "📣 LIVE"), el("div", { class: "fwin" }, track));
+      bar.hidden = false;
+    })
+    .catch(() => {});
+  return bar;
+}
+
+// Bolletje in het menu als er een beloning klaarligt.
+function updateNavDots() {
+  const set = (href, on) => nav.querySelector(`a[href="${href}"]`)?.classList.toggle("dot", !!on);
+  if (!me) return;
+  const q = me.quests;
+  set("#/", q && (q.list.some((x) => !x.claimed && x.progress >= x.target) || (q.bonus.ready && !q.bonus.claimed)));
+  const g = me.goals;
+  set("#/album", g && (g.counts.some((c) => !c.claimed && g.unique >= c.count) || g.realms.some((r) => !r.claimed && r.have >= r.total)));
+}
+
+// ---------- Op het beginscherm zetten (app) ----------
+let installPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  installPrompt = e;
+});
+const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+// force: ook tonen als de speler hem eerder wegklikte (op Mijn account).
+function installPanel(force = false) {
+  if (isStandalone() || (!force && store.get("dinorijk-install-weg"))) return null;
+  if (!installPrompt && !isIOS() && !force) return null;
+  const box = el("div", { class: "panel install" });
+  const how = isIOS()
+    ? el("small", { class: "muted" }, "Tik onderin Safari op ", el("b", {}, "Deel"), " (vierkantje met pijl) en kies ", el("b", {}, "Zet op beginscherm"), ".")
+    : installPrompt
+      ? el("button", { class: "btn small", onclick: async () => { await installPrompt.prompt(); installPrompt = null; box.remove(); } }, "Installeren")
+      : el("small", { class: "muted" }, "Open het browsermenu (⋮) en kies ", el("b", {}, "App installeren"), " of ", el("b", {}, "Toevoegen aan startscherm"), ".");
+  box.append(
+    el("img", { src: "/icons/icon-192.png", alt: "" }),
+    el("div", { class: "itext" }, el("b", {}, "📲 Zet DinoRijk op je beginscherm"), el("small", { class: "muted" }, "Dan open je het als een app, met één tik."), how),
+    force ? "" : el("button", { class: "x", "aria-label": "Sluiten", onclick: () => (store.set("dinorijk-install-weg", "1"), box.remove()) }, "×")
+  );
+  return box;
+}
+
 // Dagelijkse beloning: reeks op de eierenpagina en het venster met 7 dagen.
 function dailyBar() {
   const { streak, claimedToday } = me.daily || {};
@@ -957,6 +1111,7 @@ function accountView() {
     emailBanner(),
     el("br"),
     inviteBox(),
+    installPanel(true),
     el("br"),
     del
   );
@@ -1012,6 +1167,7 @@ async function refreshMe() {
   nav.hidden = !me;
   const bank = document.getElementById("bank");
   if (me) bank.textContent = `${me.fossils.toLocaleString("nl-NL")} 🦴`;
+  updateNavDots();
 }
 
 // keepOverlay = true: pagina op de achtergrond verversen terwijl een detailvenster open blijft.

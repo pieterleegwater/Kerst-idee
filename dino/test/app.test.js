@@ -529,3 +529,74 @@ test("dagnummer volgt middernacht in Nederland, ook rond zomer-/wintertijd", () 
   assert.equal(dayIndex(Date.UTC(2026, 9, 24, 21, 59)), dayIndex(Date.UTC(2026, 9, 24, 12, 0))); // 23:59 zomertijd: nog 24 oktober
   assert.equal(dayIndex(Date.UTC(2026, 9, 25, 22, 59)) - dayIndex(Date.UTC(2026, 9, 24, 21, 59)), 1); // 25 oktober, 23:59 wintertijd
 });
+
+test("dagelijkse opdrachten: voortgang, beloning één keer, bonusei bij alle drie, nieuwe dag = opnieuw", async () => {
+  // Elke kaart Legendarisch: de "zeldzame" opdracht is na één ei klaar.
+  const { client, db, tick } = setup({ random: () => 0.001 });
+  const a = client();
+  await register(a, "klusser");
+  const q = async () => Object.fromEntries((await a("GET", "/api/me")).body.quests.list.map((x) => [x.id, x]));
+  assert.equal((await a("POST", "/api/quests/claim", { id: "eggs" })).status, 400); // nog niet klaar
+  await a("POST", "/api/packs/open");
+  await a("POST", "/api/packs/open");
+  let s = await q();
+  assert.equal(s.eggs.progress, 2);
+  assert.equal(s.rare.progress, 1);
+  assert.equal(s.dust.progress, 0);
+  const me0 = (await a("GET", "/api/me")).body;
+  const dupe = Object.entries(me0.collection).find(([, n]) => n > 1);
+  const key = dupe ? dupe[0] : Object.keys(me0.collection)[0];
+  await give(db, "klusser", key, 9);
+  await a("POST", "/api/fossils/dust", { key, count: 5 });
+  assert.equal((await q()).dust.progress, 5);
+
+  const before = (await a("GET", "/api/me")).body.fossils;
+  assert.equal((await a("POST", "/api/quests/claim", { id: "bonus" })).status, 400); // eerst de drie zelf
+  const claims = await Promise.all(["eggs", "eggs", "dust", "rare"].map((id) => a("POST", "/api/quests/claim", { id })));
+  assert.deepEqual(claims.map((r) => r.status).sort(), [200, 200, 200, 400]);
+  const after = (await a("GET", "/api/me")).body;
+  assert.equal(after.fossils - before, RULES.quests.reduce((t, x) => t + x.fossils, 0));
+  assert.equal(after.quests.bonus.ready, true);
+  const eggs = after.packs.bought;
+  assert.equal((await a("POST", "/api/quests/claim", { id: "bonus" })).status, 200);
+  assert.equal((await a("POST", "/api/quests/claim", { id: "bonus" })).status, 400);
+  assert.equal((await a("GET", "/api/me")).body.packs.bought, eggs + RULES.questBonus.eggs);
+  assert.equal((await a("POST", "/api/quests/claim", { id: "constructor" })).status, 400);
+
+  tick(24 * HOUR);
+  await a("POST", "/api/login", { login: "klusser", password: "geheim123" });
+  s = await q();
+  assert.ok(Object.values(s).every((x) => x.progress === 0 && !x.claimed));
+});
+
+test("verzameldoelen: aantallen en complete rijken, elke beloning één keer; live-balk toont bijzondere vondsten", async () => {
+  const { client, db } = setup({ random: () => 0.001 }); // alles Legendarisch Oerkristal
+  const a = client();
+  await register(a, "verzamelaar");
+  const vuur = CARDS.filter((c) => c.group === "vuur");
+  for (const c of vuur) await give(db, "verzamelaar", c.id, 1);
+  const g = (await a("GET", "/api/me")).body.goals;
+  assert.equal(g.unique, 16);
+  assert.deepEqual(g.realms[0], { id: "vuur", have: 16, total: 16, claimed: false });
+  assert.equal((await a("POST", "/api/goals/claim", { type: "count", index: 1 })).status, 400); // 25 nog niet
+  assert.equal((await a("POST", "/api/goals/claim", { type: "count", index: 0 })).status, 200);
+  assert.equal((await a("POST", "/api/goals/claim", { type: "count", index: 0 })).status, 409);
+  assert.equal((await a("POST", "/api/goals/claim", { type: "realm", index: 1 })).status, 400); // ijs niet compleet
+  const realm = await Promise.all([1, 2, 3].map(() => a("POST", "/api/goals/claim", { type: "realm", index: 0 })));
+  assert.deepEqual(realm.map((r) => r.status).sort(), [200, 409, 409]);
+  const me = (await a("GET", "/api/me")).body;
+  assert.equal(me.fossils, RULES.goals[0].fossils);
+  assert.equal(me.packs.bought, RULES.realmReward.eggs);
+  assert.equal((await a("POST", "/api/goals/claim", { type: "realm", index: 99 })).status, 400);
+
+  // Badge op de ranglijst
+  await a("POST", "/api/packs/open");
+  const top = (await a("GET", "/api/leaderboard")).body.top;
+  assert.equal(top.find((r) => r.username === "verzamelaar").realms, 1);
+  // Live-balk
+  const feed = (await client()("GET", "/api/feed")).body.items;
+  assert.ok(feed.length > 0 && feed.every((f) => f.user === "verzamelaar"));
+  // Na verwijderen staat de speler er niet meer in
+  await a("POST", "/api/account/delete", { password: "geheim123" });
+  assert.equal((await client()("GET", "/api/feed")).body.items.length, 0);
+});

@@ -21,7 +21,15 @@ CREATE TABLE IF NOT EXISTS users (
   reg_ip_hash TEXT,
   -- Dagelijkse beloning: hoeveelste dag op rij, en op welke dag (dagnummer, Nederlandse tijd) voor het laatst opgehaald.
   streak INTEGER NOT NULL DEFAULT 0,
-  streak_day INTEGER NOT NULL DEFAULT 0
+  streak_day INTEGER NOT NULL DEFAULT 0,
+  -- Dagelijkse opdrachten (tellers van vandaag) en verzameldoelen (bitmaskers: welke beloningen al opgehaald).
+  quest_day INTEGER NOT NULL DEFAULT 0,
+  q_eggs INTEGER NOT NULL DEFAULT 0,
+  q_dust INTEGER NOT NULL DEFAULT 0,
+  q_rare INTEGER NOT NULL DEFAULT 0,
+  quests_claimed INTEGER NOT NULL DEFAULT 0,
+  realms_claimed INTEGER NOT NULL DEFAULT 0,
+  goals_claimed INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS users_referred_by ON users (referred_by, referral_rewarded);
 CREATE INDEX IF NOT EXISTS users_score ON users (score DESC);
@@ -89,3 +97,12 @@ CREATE TABLE IF NOT EXISTS login_fails (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS login_fails_key ON login_fails (key_hash, created_at);
+
+-- Bijzondere vondsten voor de live-balk (een week bewaard).
+CREATE TABLE IF NOT EXISTS pulls (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  card_key TEXT NOT NULL,
+  serial INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS pulls_time ON pulls (created_at);

@@ -37,7 +37,8 @@ export function privacyHtml() {
 <tr><th>Gegevens</th><th>Waarvoor</th><th>Grondslag</th><th>Hoe lang</th></tr>
 <tr><td>Gebruikersnaam, e-mailadres, wachtwoord (alleen als onleesbare hash), aanmaakdatum</td><td>Je account: inloggen en je wachtwoord herstellen</td><td>Uitvoering van de overeenkomst</td><td>Tot je je account verwijdert</td></tr>
 <tr><td>Spelgegevens: kaarten, fossielen, eieren, punten</td><td>Het spel zelf</td><td>Uitvoering van de overeenkomst</td><td>Tot je je account verwijdert</td></tr>
-<tr><td>Gebruikersnaam en punten op de ranglijst</td><td>De openbare ranglijst. Kies dus een gebruikersnaam die niet je echte naam is.</td><td>Uitvoering van de overeenkomst</td><td>Tot je je account verwijdert</td></tr>
+<tr><td>Gebruikersnaam, punten en badges op de ranglijst</td><td>De openbare ranglijst. Kies dus een gebruikersnaam die niet je echte naam is.</td><td>Uitvoering van de overeenkomst</td><td>Tot je je account verwijdert</td></tr>
+<tr><td>Gebruikersnaam bij een bijzondere vondst (Legendarisch, Goudfolie, Prisma, Oerkristal)</td><td>De openbare live-balk met vondsten</td><td>Uitvoering van de overeenkomst</td><td>7 dagen</td></tr>
 <tr><td>Betalingen: betaalnummer, product, bedrag, status, datum</td><td>Aankopen leveren en onze administratie</td><td>Wettelijke plicht (fiscale bewaarplicht)</td><td>7 jaar, ook na het verwijderen van je account (dan zonder naam of e-mail)</td></tr>
 <tr><td>Een versleutelde, niet terug te rekenen code van je IP-adres (hash)</td><td>Misbruik voorkomen: maximaal 3 accounts per netwerk per dag, geen beloning voor nep-uitnodigingen vanaf hetzelfde netwerk, en het afremmen van wachtwoord raden</td><td>Gerechtvaardigd belang</td><td>Aanmelden: bij je account tot je het verwijdert (in de limietlijst 30 dagen); inlogpogingen: 1 dag</td></tr>
 <tr><td>Wie jou heeft uitgenodigd, en hoeveel vrienden jij hebt uitgenodigd</td><td>De beloning voor vrienden uitnodigen. Je gebruikersnaam staat in je eigen uitnodigingslink.</td><td>Uitvoering van de overeenkomst</td><td>Tot je je account verwijdert</td></tr>
@@ -108,6 +109,8 @@ export function termsHtml({ spendCap, passDays }) {
 
 <h2>5. Vrienden uitnodigen</h2>
 <p>Met je eigen uitnodigingslink kun je vrienden uitnodigen. Maakt iemand via jouw link een account, dan krijgt die een extra ei. Zodra die het eerste ei uitbroedt, krijg jij ook een ei, tot maximaal 10 per 30 dagen. Aanmeldingen vanaf hetzelfde netwerk als jij leveren geen beloning op. Nep-accounts aanmaken om eieren te verdienen is niet toegestaan (zie artikel 2).</p>
+
+<p><b>Opdrachten en verzameldoelen:</b> elke dag zijn er nieuwe opdrachten, en je kunt beloningen verdienen door dino's te verzamelen of een rijk compleet te maken. Elke beloning kun je één keer ophalen. Beloningen hebben net als kaarten geen geldwaarde.</p>
 
 <p><b>Dagelijkse beloning:</b> haal elke dag (Nederlandse tijd) je beloning op. Zeven dagen op rij levert 2 eieren op; mis je een dag, dan begint de reeks opnieuw. Ook hiervoor geldt: één account per persoon.</p>
 

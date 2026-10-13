@@ -1,0 +1,17 @@
+{
+  "name": "DinoRijk",
+  "short_name": "DinoRijk",
+  "description": "Verzamel echte dino-kaarten: broed eieren uit, jaag op Holo, Prisma en Oerkristal.",
+  "lang": "nl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#120d08",
+  "theme_color": "#120d08",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -22,6 +22,16 @@ export const RULES = {
   // Vrienden uitnodigen: allebei een extra ei; de uitnodiger maximaal zoveel keer per 30 dagen.
   referralsPer30d: 10,
   // Dagelijkse beloning: 7 dagen op rij; dag 7 levert 2 eieren op. Een dag missen = opnieuw bij dag 1.
+  // Dagelijkse opdrachten (bit = welk vakje in quests_claimed); alle drie gehaald = bonusei.
+  quests: [
+    { id: "eggs", label: "Broed 2 eieren uit", target: 2, fossils: 20, bit: 1 },
+    { id: "dust", label: "Versteen 5 kaarten", target: 5, fossils: 15, bit: 2 },
+    { id: "rare", label: "Vind een Episch, Legendarisch of glanskaart", target: 1, fossils: 30, bit: 4 },
+  ],
+  questBonus: { eggs: 1, bit: 8 },
+  // Verzameldoelen: aantal verschillende dino's, en een heel rijk compleet.
+  goals: [{ count: 10, fossils: 50 }, { count: 25, eggs: 1 }, { count: 50, eggs: 2 }, { count: 75, eggs: 3 }, { count: 96, eggs: 5 }],
+  realmReward: { eggs: 2 },
   daily: [{ fossils: 10 }, { fossils: 10 }, { fossils: 15 }, { fossils: 15 }, { fossils: 20 }, { fossils: 25 }, { eggs: 2 }],
   // Bescherming: maximaal zoveel uitgeven per 30 dagen (in centen).
   spendCap30d: 10000,
@@ -79,6 +89,34 @@ function dailyState(user, now) {
   return { today, claimedToday, streak: alive ? user.streak : 0, nextDay: claimedToday ? null : alive ? (user.streak % 7) + 1 : 1 };
 }
 
+// Welke kaarten in de live-balk komen: Legendarisch, of Goudfolie/Prisma/Oerkristal.
+const isSpecial = (card, variant) => card.rarity === "icoon" || ["goud", "prisma", "kristal"].includes(variant);
+const isRare = (card, variant) => card.rarity === "goud" || card.rarity === "icoon" || variant !== "normaal";
+const QUEST_COL = { eggs: "q_eggs", dust: "q_dust", rare: "q_rare" };
+
+function questState(user, now) {
+  const today = dayIndex(now);
+  const fresh = user.quest_day !== today;
+  const claimed = fresh ? 0 : user.quests_claimed;
+  const list = RULES.quests.map((q) => ({
+    id: q.id, label: q.label, target: q.target, fossils: q.fossils,
+    progress: Math.min(q.target, fresh ? 0 : user[QUEST_COL[q.id]]),
+    claimed: !!(claimed & q.bit),
+  }));
+  const allDone = list.every((q) => q.claimed);
+  return { today, list, bonus: { eggs: RULES.questBonus.eggs, ready: allDone, claimed: !!(claimed & RULES.questBonus.bit) } };
+}
+
+// Verschillende dino's per rijk, uit de rijen van de verzameling.
+function collectionStats(rows) {
+  const ids = new Set(rows.map((r) => String(r.card_id).split(":")[0]));
+  const realms = GROUPS.map((g) => {
+    const cards = CARDS.filter((c) => c.group === g.id);
+    return { id: g.id, have: cards.filter((c) => ids.has(c.id)).length, total: cards.length };
+  });
+  return { unique: ids.size, realms };
+}
+
 const normEmail = (e) => String(e || "").trim().toLowerCase();
 const validEmail = (e) => e.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);
 const scoreOf = (keys) => keys.reduce((sum, k) => sum + pointsOf(k), 0);
@@ -100,6 +138,15 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
   // Laat gelijktijdige verzoeken met dezelfde naam op elkaar wachten: als eerste statement in een batch
   // houdt dit in Postgres een rijslot vast tot de transactie klaar is (SQLite/D1 doet batches al na elkaar).
   const lock = (name) => db.prepare("INSERT INTO locks (name, at) VALUES (?, ?) ON CONFLICT (name) DO UPDATE SET at = excluded.at").bind(name, now());
+  // Tellers van de dagelijkse opdrachten ophogen (begint vanzelf opnieuw op een nieuwe dag).
+  const bumpQuests = (userId, { eggs = 0, dust = 0, rare = 0 }) => {
+    const t = dayIndex(now());
+    return run(
+      `UPDATE users SET q_eggs = CASE WHEN quest_day = ? THEN q_eggs ELSE 0 END + ?, q_dust = CASE WHEN quest_day = ? THEN q_dust ELSE 0 END + ?,
+       q_rare = CASE WHEN quest_day = ? THEN q_rare ELSE 0 END + ?, quests_claimed = CASE WHEN quest_day = ? THEN quests_claimed ELSE 0 END, quest_day = ? WHERE id = ?`,
+      t, eggs, t, dust, t, rare, t, t, userId
+    );
+  };
   let dummyHash; // zodat inloggen met een onbekende naam even lang duurt als met een bestaande
   const addCard = (userId, key) =>
     db.prepare("INSERT INTO collection (user_id, card_id, count) VALUES (?, ?, 1) ON CONFLICT (user_id, card_id) DO UPDATE SET count = collection.count + 1").bind(userId, key);
@@ -305,14 +352,23 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
     },
 
     "GET /api/leaderboard": async (req) => {
-      const rows = await all("SELECT username, score, packs_opened FROM users WHERE score > 0 ORDER BY score DESC, created_at ASC LIMIT ?", RULES.leaderboardSize);
+      const rows = await all("SELECT username, score, packs_opened, realms_claimed FROM users WHERE score > 0 ORDER BY score DESC, created_at ASC LIMIT ?", RULES.leaderboardSize);
       let mine = null;
       const user = await currentUser(req);
       if (user) {
         const ahead = await one("SELECT COUNT(*) AS n FROM users WHERE score > ?", user.score);
         mine = { username: user.username, score: user.score, rank: ahead.n + 1 };
       }
-      return json({ top: rows.map((r, i) => ({ rank: i + 1, username: r.username, score: r.score, eggs: r.packs_opened })), mine });
+      return json({ top: rows.map((r, i) => ({ rank: i + 1, username: r.username, score: r.score, eggs: r.packs_opened, realms: r.realms_claimed })), mine });
+    },
+
+    // Live-balk: bijzondere vondsten van de afgelopen week.
+    "GET /api/feed": async () => {
+      const rows = await all(
+        "SELECT p.card_key, p.serial, p.created_at, u.username FROM pulls p JOIN users u ON u.id = p.user_id WHERE p.created_at > ? ORDER BY p.created_at DESC LIMIT 20",
+        now() - 7 * DAY
+      );
+      return json({ items: rows.filter((r) => !r.username.startsWith("verwijderd_")).map((r) => ({ user: r.username, key: r.card_key, serial: r.serial, at: r.created_at })) });
     },
 
     "GET /api/kristal": async () => {
@@ -355,6 +411,15 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
         spendLeft: Math.max(0, RULES.spendCap30d - spent),
         invite: { joined: friends?.joined || 0, waiting: friends?.waiting || 0 },
         daily: (({ streak, claimedToday, nextDay }) => ({ streak, claimedToday, nextDay }))(dailyState(user, now())),
+        quests: (({ list, bonus }) => ({ list, bonus }))(questState(user, now())),
+        goals: (() => {
+          const st = collectionStats(rows);
+          return {
+            unique: st.unique,
+            counts: RULES.goals.map((g, i) => ({ ...g, claimed: !!(user.goals_claimed & (1 << i)) })),
+            realms: st.realms.map((r, i) => ({ ...r, claimed: !!(user.realms_claimed & (1 << i)) })),
+          };
+        })(),
       });
     },
 
@@ -394,10 +459,58 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
       await db.batch([
         db.prepare("UPDATE users SET username = ?, email = NULL, pass_hash = ?, pass_salt = ?, score = 0, fossils = 0, bought_eggs = 0, pack_credits = 0, premium_until = 0, reg_ip_hash = NULL, referred_by = NULL WHERE id = ?").bind(`verwijderd_${randomHex(6)}`, hash, salt, user.id),
         db.prepare("DELETE FROM collection WHERE user_id = ?").bind(user.id),
+        db.prepare("DELETE FROM pulls WHERE user_id = ?").bind(user.id),
         db.prepare("DELETE FROM password_resets WHERE user_id = ?").bind(user.id),
         db.prepare("DELETE FROM sessions WHERE user_id = ?").bind(user.id),
       ]);
       return json({ ok: true }, 200, { "Set-Cookie": "sid=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0" });
+    },
+
+    // Beloning van een dagelijkse opdracht ophalen, of de bonus als alle drie klaar zijn.
+    "POST /api/quests/claim": async (_req, body, user) => {
+      const t = dayIndex(now());
+      const id = typeof body.id === "string" ? body.id : "";
+      if (id === "bonus") {
+        const all3 = RULES.quests.reduce((m, q) => m | q.bit, 0);
+        const b = RULES.questBonus;
+        const res = await run(
+          "UPDATE users SET quests_claimed = quests_claimed | ?, bought_eggs = bought_eggs + ? WHERE id = ? AND quest_day = ? AND (quests_claimed & ?) = ? AND (quests_claimed & ?) = 0",
+          b.bit, b.eggs, user.id, t, all3, all3, b.bit
+        );
+        return res.meta.changes === 1 ? json({ eggs: b.eggs }) : fail(400, "Haal eerst alle drie de opdrachten van vandaag op.");
+      }
+      const q = RULES.quests.find((x) => x.id === id);
+      if (!q) return fail(400, "Onbekende opdracht.");
+      const res = await run(
+        `UPDATE users SET quests_claimed = quests_claimed | ?, fossils = fossils + ? WHERE id = ? AND quest_day = ? AND ${QUEST_COL[q.id]} >= ? AND (quests_claimed & ?) = 0`,
+        q.bit, q.fossils, user.id, t, q.target, q.bit
+      );
+      return res.meta.changes === 1 ? json({ fossils: q.fossils }) : fail(400, "Deze opdracht is nog niet klaar, of je hebt de beloning al.");
+    },
+
+    // Verzameldoel ophalen: { type: "count", index } of { type: "realm", index }.
+    "POST /api/goals/claim": async (_req, body, user) => {
+      const i = Number(body.index);
+      const st = collectionStats(await all("SELECT card_id FROM collection WHERE user_id = ?", user.id));
+      if (body.type === "count" && Number.isInteger(i) && RULES.goals[i]) {
+        const g = RULES.goals[i];
+        if (st.unique < g.count) return fail(400, `Verzamel eerst ${g.count} verschillende dino's.`);
+        const res = await run(
+          "UPDATE users SET goals_claimed = goals_claimed | ?, fossils = fossils + ?, bought_eggs = bought_eggs + ? WHERE id = ? AND (goals_claimed & ?) = 0",
+          1 << i, g.fossils || 0, g.eggs || 0, user.id, 1 << i
+        );
+        return res.meta.changes === 1 ? json({ fossils: g.fossils || 0, eggs: g.eggs || 0 }) : fail(409, "Deze beloning heb je al.");
+      }
+      if (body.type === "realm" && Number.isInteger(i) && st.realms[i]) {
+        const r = st.realms[i];
+        if (r.have < r.total) return fail(400, "Dit rijk is nog niet compleet.");
+        const res = await run(
+          "UPDATE users SET realms_claimed = realms_claimed | ?, bought_eggs = bought_eggs + ? WHERE id = ? AND (realms_claimed & ?) = 0",
+          1 << i, RULES.realmReward.eggs, user.id, 1 << i
+        );
+        return res.meta.changes === 1 ? json({ eggs: RULES.realmReward.eggs, realm: r.id }) : fail(409, "Deze beloning heb je al.");
+      }
+      return fail(400, "Onbekend doel.");
     },
 
     // Dagelijkse beloning ophalen (één keer per dag, Nederlandse tijd).
@@ -461,7 +574,11 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
       await db.batch([
         ...cards.map(({ key }) => addCard(user.id, key)),
         db.prepare("UPDATE users SET score = score + ? WHERE id = ?").bind(scoreOf(cards.map((c) => c.key)), user.id),
+        ...cards
+          .filter(({ key }) => isSpecial(parseKey(key).card, parseKey(key).variant))
+          .map(({ key, serial }) => db.prepare("INSERT INTO pulls (user_id, card_key, serial, created_at) VALUES (?, ?, ?, ?)").bind(user.id, key, serial ?? null, now())),
       ]);
+      await bumpQuests(user.id, { eggs: 1, rare: cards.filter(({ key }) => isRare(parseKey(key).card, parseKey(key).variant)).length });
       return json({ cards });
     },
 
@@ -477,6 +594,7 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
       if (!Number.isInteger(n) || n < 1 || n > owned) return fail(400, "Zoveel heb je er niet.");
       if (!(await takeCards(user.id, key, n, owned))) return fail(409, "Probeer het nog eens.");
       await run("UPDATE users SET fossils = fossils + ?, score = score - ? WHERE id = ?", per * n, pointsOf(key) * n, user.id);
+      await bumpQuests(user.id, { dust: n });
       return json({ gained: per * n });
     },
 
@@ -485,16 +603,19 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
       const rows = await all("SELECT card_id, count FROM collection WHERE user_id = ? AND count > 1", user.id);
       let gained = 0;
       let lost = 0;
+      let dusted = 0;
       for (const r of rows) {
         const p = parseKey(r.card_id);
         const per = p && dustValue(p.card, p.variant);
         if (per == null) continue;
         if (await takeCards(user.id, r.card_id, r.count - 1, r.count)) {
           gained += per * (r.count - 1);
+          dusted += r.count - 1;
           lost += pointsOf(r.card_id) * (r.count - 1);
         }
       }
       if (gained) await run("UPDATE users SET fossils = fossils + ?, score = score - ? WHERE id = ?", gained, lost, user.id);
+      if (dusted) await bumpQuests(user.id, { dust: dusted });
       return json({ gained });
     },
 
