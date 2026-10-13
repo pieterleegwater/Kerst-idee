@@ -337,6 +337,23 @@ table.odds.legal-table td { vertical-align: top; }
 .waiver input { width: 20px; height: 20px; flex: none; accent-color: var(--accent); }
 .waiver.needs { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255, 183, 3, .35); }
 .account { max-width: 620px; margin: 0 auto; }
+/* Dagelijkse beloning */
+.streak { display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap; margin: -6px 0 6px; }
+.streak .flame { font-weight: 800; color: #ffb703; }
+.daily-box { max-width: 620px; display: block; text-align: center; }
+.daily-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; margin: 16px 0 20px; }
+.dtile { position: relative; border: 2px solid var(--line); border-radius: 12px; padding: 8px 4px; background: rgba(255, 255, 255, .03); display: grid; gap: 2px; justify-items: center; }
+.dtile small { color: var(--muted); font-size: .72rem; }
+.dtile .dicon { font-size: 1.5rem; line-height: 1.2; }
+.dtile b { font-size: .85rem; }
+.dtile.seven { grid-column: span 2; border-color: #ffd166; background: radial-gradient(circle at 50% 30%, rgba(255, 209, 102, .25), transparent 70%); }
+.dtile.done { opacity: .55; }
+.dtile .check { position: absolute; top: -8px; right: -6px; background: #2a9d8f; color: #fff; border-radius: 99px; width: 22px; height: 22px; display: grid; place-items: center; font-size: .8rem; font-weight: 800; }
+.dtile.today { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255, 183, 3, .3), 0 0 18px rgba(255, 183, 3, .45); opacity: 1; animation: pulse 1.6s ease-in-out infinite; }
+.dtile.claimed { animation: claimpop .6s cubic-bezier(.2, 1.5, .4, 1); opacity: 1; }
+@keyframes claimpop { 0% { transform: scale(1); } 40% { transform: scale(1.25); } 100% { transform: scale(1); } }
+@media (max-width: 560px) { .daily-grid { grid-template-columns: repeat(4, 1fr); } }
+
 /* Vrienden uitnodigen */
 .invite-banner { background: linear-gradient(90deg, rgba(255, 183, 3, .22), rgba(255, 183, 3, .06)); border: 1px solid var(--accent); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
 .panel.invite { max-width: 560px; margin: 26px auto 0; text-align: left; }

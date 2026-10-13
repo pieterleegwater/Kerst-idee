@@ -433,6 +433,7 @@ function packsView() {
       "replaceChildren",
       emailBanner(),
       el("h1", {}, total ? `${total} ${total > 1 ? "eieren" : "ei"} klaar` : "Even geduld…"),
+      dailyBar(),
       bought ? el("p", { class: "muted" }, `${available} gratis + ${bought} extra. Gratis eieren worden eerst uitgebroed.`) : null,
       el("p", { class: "muted" }, "Tik op het ei om het uit te broeden. Gloeit een kaart al op de achterkant? Dan zit er iets bijzonders in…"),
       pack,
@@ -811,6 +812,68 @@ async function shopView(params) {
   );
 }
 
+// Dagelijkse beloning: reeks op de eierenpagina en het venster met 7 dagen.
+function dailyBar() {
+  const { streak, claimedToday } = me.daily || {};
+  if (!me.daily) return null;
+  return el(
+    "p",
+    { class: "streak" },
+    streak ? el("span", { class: "flame" }, `🔥 ${streak} ${streak === 1 ? "dag" : "dagen"} op rij`) : null,
+    claimedToday ? null : el("button", { class: "btn small", onclick: showDaily }, "🎁 Dagbeloning ophalen")
+  );
+}
+
+let dailyShownOn = null;
+function showDaily() {
+  if (!me?.daily || me.daily.claimedToday || document.querySelector(".overlay.daily")) return;
+  dailyShownOn = new Date().toDateString();
+  const { nextDay } = me.daily;
+  const rewards = catalog.rules.daily;
+  const tiles = rewards.map((r, i) => {
+    const n = i + 1;
+    return el(
+      "div",
+      { class: `dtile${n < nextDay ? " done" : ""}${n === nextDay ? " today" : ""}${r.eggs ? " seven" : ""}` },
+      el("small", {}, `Dag ${n}`),
+      el("div", { class: "dicon" }, r.eggs ? "🥚".repeat(r.eggs) : "🦴"),
+      el("b", {}, r.eggs ? `${r.eggs} eieren` : `+${r.fossils}`),
+      n < nextDay ? el("span", { class: "check" }, "✓") : null
+    );
+  });
+  const close = () => overlay.remove();
+  const claim = el("button", { class: "btn" }, "Ophalen");
+  claim.addEventListener("click", async () => {
+    claim.disabled = true;
+    const before = me.fossils;
+    try {
+      const { day, reward } = await api("/api/daily", {});
+      const tile = tiles[day - 1];
+      tile.classList.add("claimed", "done");
+      if (reward.eggs) celebrate(`${reward.eggs} EIEREN!`, "7 dagen op rij 🔥", "c-goud");
+      else await bonesToBank(tile, reward.fossils, before);
+      await refreshMe();
+      setTimeout(() => (close(), route()), reward.eggs ? 1600 : 300);
+    } catch (ex) {
+      toast(ex.message);
+      close();
+    }
+  });
+  const overlay = el(
+    "div",
+    { class: "overlay daily", onclick: (e) => e.target === overlay && close() },
+    el(
+      "div",
+      { class: "detail daily-box" },
+      el("h2", {}, "🎁 Dagelijkse beloning"),
+      el("p", { class: "muted" }, `Kom elke dag terug! Op dag 7 krijg je ${rewards[6].eggs} gratis eieren. Mis je een dag, dan begin je weer bij dag 1.`),
+      el("div", { class: "daily-grid" }, tiles),
+      el("p", {}, claim, " ", el("button", { class: "btn ghost", onclick: close }, "Later"))
+    )
+  );
+  document.body.append(overlay);
+}
+
 // Je eigen uitnodigingslink, met delen/kopiëren en hoeveel vrienden er meededen.
 function inviteBox() {
   const link = `${location.origin}/?vriend=${encodeURIComponent(me.username)}`;
@@ -976,6 +1039,8 @@ async function route(keepOverlay) {
     view.replaceChildren(node);
     // Ander scherm (of net in-/uitgelogd): bovenaan beginnen, anders land je op de telefoon halverwege de pagina.
     checkInviteReward();
+    // Eén keer per dag vanzelf het beloningsvenster tonen (niet over een betaling of wachtwoordscherm heen).
+    if (me && !me.daily?.claimedToday && dailyShownOn !== new Date().toDateString() && !["/reset", "/winkel"].includes(path)) setTimeout(showDaily, 500);
     const screen = `${path}|${!!me}`;
     if (screen !== route.screen) scrollTo(0, 0);
     route.screen = screen;

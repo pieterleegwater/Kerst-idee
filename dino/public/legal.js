@@ -109,6 +109,8 @@ export function termsHtml({ spendCap, passDays }) {
 <h2>5. Vrienden uitnodigen</h2>
 <p>Met je eigen uitnodigingslink kun je vrienden uitnodigen. Maakt iemand via jouw link een account, dan krijgt die een extra ei. Zodra die het eerste ei uitbroedt, krijg jij ook een ei, tot maximaal 10 per 30 dagen. Aanmeldingen vanaf hetzelfde netwerk als jij leveren geen beloning op. Nep-accounts aanmaken om eieren te verdienen is niet toegestaan (zie artikel 2).</p>
 
+<p><b>Dagelijkse beloning:</b> haal elke dag (Nederlandse tijd) je beloning op. Zeven dagen op rij levert 2 eieren op; mis je een dag, dan begint de reeks opnieuw. Ook hiervoor geldt: één account per persoon.</p>
+
 <h2>6. Het spel kan veranderen</h2>
 <p>We werken DinoRijk regelmatig bij, bijvoorbeeld met nieuwe kaarten of seizoenen. We doen ons best om het spel altijd bereikbaar te houden, maar onderhoud of storingen kunnen voorkomen. Stoppen we met DinoRijk, dan laten we dat minstens 30 dagen van tevoren weten.</p>
 

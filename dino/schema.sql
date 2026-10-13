@@ -18,7 +18,10 @@ CREATE TABLE IF NOT EXISTS users (
   -- Uitnodigen: wie nodigde jou uit, wanneer leverde dat de uitnodiger een ei op (0 = nog niet), hash van je aanmeld-IP.
   referred_by TEXT,
   referral_rewarded INTEGER NOT NULL DEFAULT 0,
-  reg_ip_hash TEXT
+  reg_ip_hash TEXT,
+  -- Dagelijkse beloning: hoeveelste dag op rij, en op welke dag (dagnummer, Nederlandse tijd) voor het laatst opgehaald.
+  streak INTEGER NOT NULL DEFAULT 0,
+  streak_day INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS users_referred_by ON users (referred_by, referral_rewarded);
 CREATE INDEX IF NOT EXISTS users_score ON users (score DESC);

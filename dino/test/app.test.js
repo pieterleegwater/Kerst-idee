@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createApp, RULES, packState } from "../src/app.js";
+import { createApp, RULES, packState, dayIndex } from "../src/app.js";
 import { CARDS, BY_RARITY, drawPack, PACK_SIZE, parseKey, KRISTAL_CAP, pointsOf } from "../src/cards.js";
 import { testDb, testPgDb } from "./d1.js";
 
@@ -484,4 +484,48 @@ test("vrienden uitnodigen: allebei een ei, niet vanaf hetzelfde netwerk, max 10 
   await late("POST", "/api/register", { username: "laat", email: "laat@test.nl", password: "geheim123", adult: true, ref: "gastheer" });
   await late("POST", "/api/packs/open");
   assert.equal(await bought(host), RULES.referralsPer30d + 1);
+});
+
+test("dagelijkse beloning: 7 dagen op rij geeft 2 eieren, dag missen begint opnieuw", async () => {
+  const { client, tick } = setup();
+  const a = client();
+  await register(a, "trouw");
+  const me = async () => (await a("GET", "/api/me")).body;
+  assert.deepEqual((await me()).daily, { streak: 0, claimedToday: false, nextDay: 1 });
+
+  const fossils = RULES.daily.slice(0, 6).reduce((s, r) => s + r.fossils, 0);
+  for (let day = 1; day <= 7; day++) {
+    const r = await a("POST", "/api/daily", {});
+    assert.equal(r.status, 200);
+    assert.equal(r.body.day, day);
+    // Tegelijk of nog een keer dezelfde dag: geweigerd.
+    const again = await Promise.all([a("POST", "/api/daily", {}), a("POST", "/api/daily", {})]);
+    assert.deepEqual(again.map((x) => x.status), [409, 409]);
+    if (day < 7) tick(24 * HOUR);
+  }
+  const m = await me();
+  assert.equal(m.fossils, fossils);
+  assert.equal(m.packs.bought, 2);
+  assert.deepEqual(m.daily, { streak: 7, claimedToday: true, nextDay: null });
+
+  // Na dag 7 begint de reeks weer bij 1.
+  tick(24 * HOUR);
+  await a("POST", "/api/login", { login: "trouw", password: "geheim123" });
+  assert.equal((await a("POST", "/api/daily", {})).body.day, 1);
+  tick(24 * HOUR);
+  assert.equal((await a("POST", "/api/daily", {})).body.day, 2);
+  // Een dag overgeslagen: opnieuw bij dag 1.
+  tick(48 * HOUR);
+  assert.deepEqual((await me()).daily, { streak: 0, claimedToday: false, nextDay: 1 });
+  assert.equal((await a("POST", "/api/daily", {})).body.day, 1);
+});
+
+test("dagnummer volgt middernacht in Nederland, ook rond zomer-/wintertijd", () => {
+  // 23:30 en 00:30 Amsterdamse tijd (wintertijd = UTC+1) vallen op verschillende dagen.
+  assert.equal(dayIndex(Date.UTC(2026, 10, 1, 23, 30)), dayIndex(Date.UTC(2026, 10, 2, 22, 30))); // allebei 2 november
+  assert.equal(dayIndex(Date.UTC(2026, 10, 1, 22, 59)), dayIndex(Date.UTC(2026, 10, 1, 0, 0)));
+  assert.equal(dayIndex(Date.UTC(2026, 10, 1, 23, 1)), dayIndex(Date.UTC(2026, 10, 1, 0, 0)) + 1);
+  // Nacht van de klokwissel (25 oktober 2026): de dag telt gewoon als één dag.
+  assert.equal(dayIndex(Date.UTC(2026, 9, 24, 21, 59)), dayIndex(Date.UTC(2026, 9, 24, 12, 0))); // 23:59 zomertijd: nog 24 oktober
+  assert.equal(dayIndex(Date.UTC(2026, 9, 25, 22, 59)) - dayIndex(Date.UTC(2026, 9, 24, 21, 59)), 1); // 25 oktober, 23:59 wintertijd
 });

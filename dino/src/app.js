@@ -21,6 +21,8 @@ export const RULES = {
   leaderboardSize: 50,
   // Vrienden uitnodigen: allebei een extra ei; de uitnodiger maximaal zoveel keer per 30 dagen.
   referralsPer30d: 10,
+  // Dagelijkse beloning: 7 dagen op rij; dag 7 levert 2 eieren op. Een dag missen = opnieuw bij dag 1.
+  daily: [{ fossils: 10 }, { fossils: 10 }, { fossils: 15 }, { fossils: 15 }, { fossils: 20 }, { fossils: 25 }, { eggs: 2 }],
   // Bescherming: maximaal zoveel uitgeven per 30 dagen (in centen).
   spendCap30d: 10000,
 };
@@ -63,6 +65,19 @@ async function sha256(text) {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 const hashIp = (ip, salt) => sha256(`${salt}:${ip}`);
+
+// Dagnummer in Nederlandse tijd (een nieuwe dag begint om middernacht in Amsterdam).
+const dayFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Amsterdam", year: "numeric", month: "2-digit", day: "2-digit" });
+export function dayIndex(t) {
+  const [y, m, d] = dayFmt.format(t).split("-").map(Number);
+  return Date.UTC(y, m - 1, d) / DAY;
+}
+function dailyState(user, now) {
+  const today = dayIndex(now);
+  const claimedToday = user.streak_day === today;
+  const alive = claimedToday || user.streak_day === today - 1;
+  return { today, claimedToday, streak: alive ? user.streak : 0, nextDay: claimedToday ? null : alive ? (user.streak % 7) + 1 : 1 };
+}
 
 const normEmail = (e) => String(e || "").trim().toLowerCase();
 const validEmail = (e) => e.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);
@@ -339,6 +354,7 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
         value,
         spendLeft: Math.max(0, RULES.spendCap30d - spent),
         invite: { joined: friends?.joined || 0, waiting: friends?.waiting || 0 },
+        daily: (({ streak, claimedToday, nextDay }) => ({ streak, claimedToday, nextDay }))(dailyState(user, now())),
       });
     },
 
@@ -382,6 +398,19 @@ export function createApp({ db, mollie, mailer = createMailer(), now = () => Dat
         db.prepare("DELETE FROM sessions WHERE user_id = ?").bind(user.id),
       ]);
       return json({ ok: true }, 200, { "Set-Cookie": "sid=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0" });
+    },
+
+    // Dagelijkse beloning ophalen (één keer per dag, Nederlandse tijd).
+    "POST /api/daily": async (_req, _body, user) => {
+      const { today, claimedToday, nextDay } = dailyState(user, now());
+      if (claimedToday) return fail(409, "Je hebt je beloning van vandaag al opgehaald. Kom morgen terug!");
+      const reward = RULES.daily[nextDay - 1];
+      const res = await run(
+        "UPDATE users SET streak = ?, streak_day = ?, fossils = fossils + ?, bought_eggs = bought_eggs + ? WHERE id = ? AND streak_day = ?",
+        nextDay, today, reward.fossils || 0, reward.eggs || 0, user.id, user.streak_day
+      );
+      if (res.meta.changes !== 1) return fail(409, "Je hebt je beloning van vandaag al opgehaald. Kom morgen terug!");
+      return json({ day: nextDay, reward });
     },
 
     // Gratis eieren gaan eerst; daarna de gekochte.
