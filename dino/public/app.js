@@ -978,10 +978,12 @@ function dailyBar() {
   );
 }
 
-let dailyShownOn = null;
+// Eén keer per dag vanzelf tonen; ook na herladen of opnieuw openen niet nog eens.
+const DAILY_KEY = "dinorijk-dagvenster";
+const dailyShownToday = () => store.get(DAILY_KEY) === new Date().toDateString();
 function showDaily() {
   if (!me?.daily || me.daily.claimedToday || document.querySelector(".overlay.daily")) return;
-  dailyShownOn = new Date().toDateString();
+  store.set(DAILY_KEY, new Date().toDateString());
   const { nextDay } = me.daily;
   const rewards = catalog.rules.daily;
   const tiles = rewards.map((r, i) => {
@@ -1196,7 +1198,7 @@ async function route(keepOverlay) {
     // Ander scherm (of net in-/uitgelogd): bovenaan beginnen, anders land je op de telefoon halverwege de pagina.
     checkInviteReward();
     // Eén keer per dag vanzelf het beloningsvenster tonen (niet over een betaling of wachtwoordscherm heen).
-    if (me && !me.daily?.claimedToday && dailyShownOn !== new Date().toDateString() && !["/reset", "/winkel"].includes(path)) setTimeout(showDaily, 500);
+    if (me && !me.daily?.claimedToday && !dailyShownToday() && !["/reset", "/winkel"].includes(path)) setTimeout(showDaily, 500);
     const screen = `${path}|${!!me}`;
     if (screen !== route.screen) scrollTo(0, 0);
     route.screen = screen;
