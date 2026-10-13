@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=540">
+<link rel="stylesheet" href="/style.css">
+<style>
+  html, body { margin: 0; width: 540px; height: 960px; overflow: hidden; background: #120d08; }
+  body { display: block; min-height: 0; }
+  #stage { position: relative; width: 540px; height: 960px; overflow: hidden;
+    background: radial-gradient(700px 520px at 50% 38%, #5c2a0b 0%, #1d1209 55%, #0b0704 100%); font-family: "Inter", sans-serif; color: #fbf3e4; }
+  #stage.feedpost { height: 675px; }
+  .abs { position: absolute; }
+  .center { left: 50%; top: 50%; translate: -50% -50%; }
+  .cap { position: absolute; left: 50%; translate: -50% 0; text-align: center; white-space: nowrap; }
+  .tt { font: 800 25px/1.25 "Inter"; background: #fff; color: #111; padding: 8px 16px; border-radius: 12px; box-shadow: 0 6px 22px rgba(0,0,0,.5); }
+  .big { font: 700 64px/1 "Oswald"; text-transform: uppercase; letter-spacing: .02em; -webkit-text-stroke: 2px #000; paint-order: stroke fill; text-shadow: 0 6px 24px rgba(0,0,0,.6); }
+  .mid { font: 700 32px/1.15 "Oswald"; text-transform: uppercase; text-shadow: 0 3px 14px rgba(0,0,0,.8); }
+  .small { font: 600 19px/1.35 "Inter"; color: #fbf3e4; text-shadow: 0 2px 10px #000; white-space: normal; width: 440px; }
+  .gold { color: #ffd166; } .purple { color: #d6a4ff; } .cyan { color: #7df9ff; }
+  .rainbow { background: linear-gradient(90deg, #ff0080, #ffe600, #00ff85, #00cfff, #b56dff); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-stroke: 0; }
+  .card { width: 280px; }
+  .card.sm { width: 210px; }
+  .pack { width: 210px; margin: 0; animation: none; }
+  .cracks { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .pack .cracks path { fill: none !important; stroke: #fff2ff !important; stroke-width: 3.2 !important; stroke-linejoin: round; stroke-dasharray: 120; stroke-dashoffset: 120; animation: none !important;
+    filter: drop-shadow(0 0 2px #b155ff) drop-shadow(0 0 6px #b155ff) drop-shadow(0 0 14px #c77dff) !important; }
+  .pack { --glow: #c77dff; }
+  .rays { width: 900px; height: 900px; margin: -450px 0 0 -450px; border-radius: 50%; background: repeating-conic-gradient(rgba(214, 164, 255, .9) 0 6deg, transparent 6deg 18deg); -webkit-mask: radial-gradient(circle, #000 15%, transparent 65%); mask: radial-gradient(circle, #000 15%, transparent 65%); }
+  .flash { inset: 0; background: radial-gradient(circle at 50% 45%, #fff 0 20%, rgba(214,164,255,.8) 45%, transparent 75%); }
+  .shard { width: 46px; height: 46px; margin: -23px 0 0 -23px; background: radial-gradient(circle at 35% 30%, #fffaf0, #f2d6a2 55%, #b87a3a); }
+  .cta { left: 50%; translate: -50% 0; display: grid; justify-items: center; gap: 10px; text-align: center; }
+  .cta .logo { font: 700 76px/1 "Oswald"; color: #ffb703; letter-spacing: .03em; -webkit-text-stroke: 2px #2b1a05; paint-order: stroke fill; }
+  .cta .btn { font-size: 30px; padding: 18px 40px; pointer-events: none; }
+  .cta .url { font: 800 28px "Inter"; color: #fff; }
+  .cta .small { font-size: 24px !important; }
+  .age { font: 700 12px "Inter"; color: #c7b293; opacity: .9; }
+  .glow { width: 420px; height: 420px; margin: -210px 0 0 -210px; border-radius: 50%; background: radial-gradient(circle, rgba(255, 183, 3, .45), transparent 65%); }
+  .label { font: 800 18px "Inter"; padding: 6px 14px; border-radius: 99px; background: #111; border: 2px solid currentColor; }
+  .spark { width: 8px; height: 8px; margin: -4px; border-radius: 50%; background: #fff; box-shadow: 0 0 10px 3px currentColor; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script type="module">
+import { dinoSvg, setDinoImages } from "/art.js";
+
+const P = new URLSearchParams(location.search);
+const AD = P.get("ad") || "1";
+const stage = document.getElementById("stage");
+const catalog = await fetch("/catalog.json").then((r) => r.json());
+const manifest = await fetch("/img/dino/manifest.json").then((r) => r.json());
+setDinoImages(manifest.images || []);
+await document.fonts.ready;
+
+const GEMS = { brons: "◆", zilver: "◆◆", goud: "◆◆◆", icoon: "★" };
+const groupOf = (id) => catalog.groups.find((g) => g.id === id);
+const byId = (id) => catalog.cards.find((c) => c.id === id);
+const h = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) k === "class" ? (n.className = v) : k === "style" ? (n.style.cssText = v) : k === "html" ? (n.innerHTML = v) : n.setAttribute(k, v);
+  for (const c of kids.flat()) if (c != null && c !== false) n.append(c);
+  return n;
+};
+// Zelfde opbouw als de kaart in de app.
+function card(id, variant = "normaal", serial = null, extra = "") {
+  const c = byId(id);
+  const g = groupOf(c.group);
+  const v = catalog.variants[variant];
+  const n = h("div", { class: `card r-${c.rarity} v-${variant} ${extra}` });
+  n.style.setProperty("--c1", g.colors[0]);
+  n.style.setProperty("--c2", g.colors[1]);
+  const art = h("div", { class: "art", html: dinoSvg(c, g, { variant }) });
+  n.append(
+    h("div", { class: "inner" }, art,
+      h("div", { class: "top" }, h("b", { class: "rating" }, String(c.rating)), h("div", { class: "meta" }, h("span", { class: "pos" }, c.pos), h("span", { class: "tier" }, catalog.rarities[c.rarity].label)), h("span", { class: "gems" }, GEMS[c.rarity])),
+      h("div", { class: "plate" }, h("b", { class: `name${c.name.length > 15 ? " long" : ""}` }, c.name), h("span", { class: "sub" }, `${c.species} · ${g.name}`)),
+      h("div", { class: "stats" }, Object.entries(c.stats).map(([k, val]) => h("span", {}, h("b", {}, String(val)), k))),
+      h("div", { class: "foot" }, h("span", {}, `#${String(c.number).padStart(3, "0")} · S${catalog.season}`), variant !== "normaal" ? h("span", { class: "vtag" }, v.label) : null, serial ? h("span", { class: "serial" }, `${String(serial).padStart(2, "0")}/${catalog.kristalCap}`) : null)
+    ),
+    h("div", { class: "fx" }), h("div", { class: "glare" })
+  );
+  return n;
+}
+// Animatie op een vast tijdstip (ms) in de tijdlijn; alles wordt later beeld voor beeld 'gezocht'.
+const A = (node, frames, start, dur, easing = "cubic-bezier(.2,.8,.3,1)") => node.animate(frames, { delay: start, duration: dur, fill: "both", easing });
+const add = (n, cls = "", style = "") => (n.classList.add("abs", ...cls.split(" ").filter(Boolean)), (n.style.cssText += style), stage.append(n), n);
+const pop = (n, start, dur = 450) => A(n, [{ scale: 0.3, opacity: 0 }, { scale: 1.08, opacity: 1, offset: 0.6 }, { scale: 1, opacity: 1 }], start, dur);
+const out = (n, start, dur = 300) => n.animate([{ opacity: 1 }, { opacity: 0 }], { delay: start, duration: dur, fill: "forwards", composite: "replace" });
+const fadeIn = (n, start, dur = 400) => A(n, [{ opacity: 0, translate: "-50% 16px" }, { opacity: 1, translate: "-50% 0" }], start, dur);
+function sparks(x, y, start, color, n = 24, dist = 260) {
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + i;
+    const s = add(h("span"), "spark", `left:${x}px;top:${y}px;color:${color}`);
+    A(s, [{ translate: "0 0", opacity: 0 }, { translate: "0 0", opacity: 1, offset: 0.01 }, { translate: `${Math.cos(a) * dist * (0.5 + (i % 5) / 8)}px ${Math.sin(a) * dist * (0.5 + (i % 3) / 5)}px`, opacity: 0 }], start, 1100, "cubic-bezier(.1,.7,.3,1)");
+  }
+}
+function cta(y, start, sub = "Elke dag gratis eieren") {
+  const fan = [["vuur-1", "holo", -16, -120], ["oceaan-1", "kristal", 0, 0], ["storm-1", "prisma", 16, 120]];
+  fan.forEach(([id, v, r, x], i) => {
+    const c = add(card(id, v, v === "kristal" ? 1 : null, "sm"), "", `left:${165 + x}px;top:${110 + Math.abs(x) * 0.22}px;z-index:${i === 1 ? 2 : 1}`);
+    A(c, [{ translate: "0 -500px", rotate: "0deg", opacity: 0 }, { translate: "0 0", rotate: `${r}deg`, opacity: 1 }], start + i * 120, 550, "cubic-bezier(.2,1.2,.4,1)");
+  });
+  const box = add(h("div", { style: "z-index:3" }, h("div", { class: "logo" }, "DINORIJK"), h("div", { class: "small", style: "text-align:center;width:auto" }, sub), h("span", { class: "btn" }, "Speel gratis ▸"), h("div", { class: "url" }, "dinorijk.live"), h("div", { class: "age" }, "18+ · kaarten hebben geen geldwaarde")), "cta", `top:${y}px`);
+  A(box, [{ opacity: 0, scale: 0.85 }, { opacity: 1, scale: 1 }], start, 500);
+  A(box.querySelector(".btn"), [{ scale: 1 }, { scale: 1.08 }, { scale: 1 }], start + 600, 900, "ease-in-out");
+  A(box.querySelector(".btn"), [{ scale: 1 }, { scale: 1.08 }, { scale: 1 }], start + 1600, 900, "ease-in-out");
+  return box;
+}
+
+const ads = {
+  // 1. POV: gratis ei openen → Legendarisch Prisma
+  "1"() {
+    const T = add(h("div", { class: "tt" }, "POV: je opent je gratis ei 🥚"), "cap", "top:150px");
+    pop(T, 200); out(T, 4000);
+    const glow = add(h("div"), "glow", "left:270px;top:430px");
+    A(glow, [{ opacity: 0.4, scale: 0.8 }, { opacity: 1, scale: 1.3 }], 0, 4000, "ease-in");
+    const egg = add(h("div", { class: "pack" }, h("span", {}, "DinoRijk", h("br"), "Seizoen 1")), "", "left:165px;top:300px");
+    egg.insertAdjacentHTML("beforeend", `<svg class="cracks" viewBox="0 0 100 125">${["M50 8 L45 26 L54 38 L46 52 L55 66", "M18 60 L32 56 L38 66 L50 62", "M86 58 L72 62 L66 52 L55 66", "M55 66 L50 82 L58 96 L52 116"].map((d) => `<path d="${d}"/>`).join("")}</svg>`);
+    const svg = egg.querySelector("svg");
+    // schudden, steeds harder
+    A(egg, [{ rotate: "0deg" }, { rotate: "-4deg" }, { rotate: "4deg" }, { rotate: "-3deg" }, { rotate: "0deg" }], 600, 900, "ease-in-out");
+    const hard = []; for (let i = 0; i < 8; i++) hard.push({ rotate: `${i % 2 ? 9 : -9}deg`, translate: `${i % 2 ? 3 : -3}px 0` });
+    A(egg, [{ rotate: "0deg" }, ...hard, { rotate: "0deg", scale: 1.06 }], 1700, 1900, "linear");
+    [...svg.querySelectorAll("path")].forEach((p, i) => A(p, [{ strokeDashoffset: 120 }, { strokeDashoffset: 0 }], 2000 + i * 350, 300));
+    A(egg, [{ boxShadow: "0 0 60px rgba(255,183,3,.5)" }, { boxShadow: "0 0 90px 30px rgba(199,125,255,.95)" }], 2600, 1000);
+    A(egg, [{ opacity: 1 }, { opacity: 0, scale: 1.5 }], 3700, 150);
+    // knal
+    const rays = add(h("div"), "rays", "left:270px;top:430px");
+    A(rays, [{ opacity: 0, scale: 0.3, rotate: "0deg" }, { opacity: 1, scale: 0.6, rotate: "10deg", offset: 0.1 }, { opacity: 0.55, scale: 1, rotate: "60deg" }], 3700, 5000, "linear");
+    const fl = add(h("div"), "flash");
+    A(fl, [{ opacity: 0 }, { opacity: 1, offset: 0.15 }, { opacity: 0 }], 3650, 900, "ease-out");
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      const s = add(h("span"), "shard", `left:270px;top:430px;clip-path:polygon(${(i * 13) % 40}% 0,100% ${20 + (i * 7) % 30}%,${60 + (i * 11) % 40}% 100%,0 ${50 + (i * 5) % 40}%)`);
+      A(s, [{ translate: "0 0", rotate: "0deg", opacity: 0 }, { opacity: 1, offset: 0.01 }, { translate: `${Math.cos(a) * 200}px ${Math.sin(a) * 150 - 60}px`, rotate: `${i * 40}deg`, opacity: 1, offset: 0.45 }, { translate: `${Math.cos(a) * 260}px ${Math.sin(a) * 150 + 420}px`, rotate: `${i * 80}deg`, opacity: 0 }], 3700, 1300, "cubic-bezier(.2,.6,.5,1)");
+    }
+    sparks(270, 430, 3700, "#d6a4ff", 30, 300);
+    // kaart
+    const c = add(card("vuur-1", "prisma"), "", "left:130px;top:250px");
+    A(c, [{ scale: 0.1, rotate: "-25deg", opacity: 0 }, { scale: 1.12, rotate: "4deg", opacity: 1, offset: 0.7 }, { scale: 1, rotate: "0deg", opacity: 1 }], 3800, 800);
+    A(c, [{ translate: "0 0" }, { translate: "0 -8px" }, { translate: "0 0" }], 4800, 2000, "ease-in-out");
+    const b1 = add(h("div", { class: "big rainbow" }, "PRISMA!"), "cap", "top:140px");
+    pop(b1, 4300, 500);
+    const b2 = add(h("div", { class: "mid purple" }, "★ Legendarisch ★"), "cap", "top:665px");
+    fadeIn(b2, 4700);
+    const b3 = add(h("div", { class: "tt" }, "maar 1 op de 333 kaarten is Prisma 😳"), "cap", "top:720px");
+    pop(b3, 5600);
+    [c, b1, b2, b3, rays].forEach((n) => out(n, 8200, 400));
+    cta(450, 8500);
+    return 12000;
+  },
+
+  // 2. Zeldzaamheidsladder → Oerkristal 01/25
+  "2"() {
+    const T = add(h("div", { class: "tt" }, "Hoe zeldzaam is jouw kaart? 👀"), "cap", "top:140px");
+    pop(T, 200);
+    const steps = [
+      ["schaduw-1", "normaal", "Normaal", "#c7b293", "90%"],
+      ["schaduw-1", "holo", "Holo", "#8fd3ff", "1 op 13"],
+      ["schaduw-1", "goud", "Goudfolie", "#ffd166", "1 op 67"],
+      ["schaduw-1", "prisma", "Prisma", "#ff7df0", "1 op 333"],
+      ["schaduw-1", "kristal", "Oerkristal", "#7df9ff", "1 op 5.000"],
+    ];
+    const t0 = 900, step = 1600;
+    steps.forEach(([id, v, label, color, odds], i) => {
+      const c = add(card(id, v, v === "kristal" ? 1 : null), "", "left:130px;top:230px");
+      const s = t0 + i * step;
+      A(c, [{ translate: "420px 0", rotate: "18deg", opacity: 0 }, { translate: "0 0", rotate: "0deg", opacity: 1 }], s, 450, "cubic-bezier(.2,1.2,.4,1)");
+      if (i < steps.length - 1) A(c, [{ translate: "0 0", opacity: 1 }, { translate: "-420px 0", rotate: "-18deg", opacity: 0 }], s + step - 250, 300, "ease-in").effect.updateTiming({ fill: "forwards" });
+      const lab = add(h("div", { class: "label", style: `color:${color}` }, `${label} · ${odds}`), "cap", "top:650px");
+      A(lab, [{ opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1 }], s + 150, 300);
+      if (i < steps.length - 1) out(lab, s + step - 250, 200);
+      if (v === "kristal") sparks(270, 420, s + 200, "#7df9ff", 34, 320);
+    });
+    const end = t0 + 4 * step;
+    const fl = add(h("div"), "flash", "background:radial-gradient(circle at 50% 45%, #fff 0 15%, rgba(125,249,255,.7) 45%, transparent 75%)");
+    A(fl, [{ opacity: 0 }, { opacity: 1, offset: 0.15 }, { opacity: 0 }], end, 900, "ease-out");
+    const k1 = add(h("div", { class: "mid cyan" }, "Er bestaan er maar 25"), "cap", "top:705px");
+    fadeIn(k1, end + 700);
+    const k2 = add(h("div", { class: "tt" }, "in de héle wereld 🌍"), "cap", "top:752px");
+    pop(k2, end + 1200);
+    [...stage.querySelectorAll(".card, .label, .mid, .tt, .spark")].forEach((n) => out(n, end + 3300, 400));
+    cta(450, end + 3600, "Jaag op de 25 Oerkristallen");
+    return end + 7300;
+  },
+
+  // 3. Wist je dat… (echte weetjes) → verzamel ze allemaal
+  "3"() {
+    const T = add(h("div", { class: "tt" }, "Wist je dat… 🦖"), "cap", "top:140px");
+    pop(T, 200);
+    const items = [
+      ["oceaan-1", "kristal", "Mosasaurus werd voor het eerst gevonden bij Maastricht! 🇳🇱"],
+      ["jungle-6", "holo", "Een Velociraptor was zo groot als een kalkoen… met veren"],
+      ["storm-1", "prisma", "Quetzalcoatlus had een spanwijdte van 10 meter ✈️"],
+      ["ijs-15", "goud", "Spinosaurus had een zeil op zijn rug en at vooral vis 🐟"],
+    ];
+    const t0 = 800, step = 2300;
+    items.forEach(([id, v, fact], i) => {
+      const s = t0 + i * step;
+      const c = add(card(id, v, v === "kristal" ? 7 : null), "", "left:130px;top:215px");
+      A(c, [{ scale: 0.5, rotate: `${i % 2 ? 12 : -12}deg`, opacity: 0 }, { scale: 1, rotate: "0deg", opacity: 1 }], s, 450, "cubic-bezier(.2,1.3,.4,1)");
+      out(c, s + step - 200, 200);
+      const f = add(h("div", { class: "small", style: "text-align:center;font-size:23px;font-weight:800" }, fact), "cap", "top:640px");
+      fadeIn(f, s + 300);
+      out(f, s + step - 200, 200);
+    });
+    const end = t0 + items.length * step;
+    const fan = [["vuur-1", "holo", -14, -120], ["oceaan-1", "kristal", 0, 0], ["storm-1", "prisma", 14, 120]];
+    fan.forEach(([id, v, r, x], i) => {
+      const c = add(card(id, v, v === "kristal" ? 1 : null, "sm"), "", `left:${165 + x}px;top:${230 + Math.abs(x) * 0.22}px;z-index:${i === 1 ? 2 : 1}`);
+      A(c, [{ translate: "0 500px", rotate: "0deg", opacity: 0 }, { translate: "0 0", rotate: `${r}deg`, opacity: 1 }], end + i * 120, 500, "cubic-bezier(.2,1.2,.4,1)");
+      out(c, end + 2400, 300);
+    });
+    const k = add(h("div", { class: "mid gold", style: "text-align:center;line-height:1.2" }, "96 echte dino's.", h("br"), "Verzamel ze allemaal."), "cap", "top:590px");
+    fadeIn(k, end + 500);
+    out(k, end + 2400, 300); out(T, end + 2400, 300);
+    cta(450, end + 2700, "Elke dag gratis eieren");
+    return end + 6300;
+  },
+
+  // Feed-plaatje 1080×1350
+  feed() {
+    stage.classList.add("feedpost");
+    add(h("div"), "glow", "left:270px;top:330px;width:560px;height:560px;margin:-280px 0 0 -280px");
+    const fan = [["vuur-1", "holo", -14, -120], ["oceaan-1", "kristal", 0, 0], ["storm-1", "prisma", 14, 120]];
+    fan.forEach(([id, v, r, x], i) => add(card(id, v, v === "kristal" ? 1 : null, "sm"), "", `left:${165 + x}px;top:${150 + Math.abs(x) * 0.22}px;rotate:${r}deg;z-index:${i === 1 ? 2 : 1}`));
+    add(h("div", { class: "big", style: "font-size:48px" }, "Verzamel echte", h("br"), h("span", { class: "gold" }, "dino-kaarten")), "cap", "top:30px;line-height:1.05");
+    add(h("div", { class: "small", style: "text-align:center;font-size:19px" }, "Broed elke dag gratis eieren uit en jaag op Holo, Prisma en de genummerde Oerkristal-kaarten."), "cap", "top:500px");
+    add(h("span", { class: "btn", style: "font-size:22px;padding:12px 26px" }, "Speel gratis op dinorijk.live"), "cap", "top:580px");
+    add(h("div", { class: "age" }, "18+ · kaarten hebben geen geldwaarde"), "cap", "top:645px");
+    return 0;
+  },
+
+  // Story-plaatje 1080×1920
+  story() {
+    add(h("div"), "glow", "left:270px;top:450px;width:600px;height:600px;margin:-300px 0 0 -300px");
+    add(h("div", { class: "logo", style: "font:700 54px Oswald;color:#ffb703;-webkit-text-stroke:2px #2b1a05;paint-order:stroke fill" }, "🦖 DINORIJK"), "cap", "top:130px");
+    add(h("div", { class: "tt" }, "Er bestaan er maar 25 van 🌍"), "cap", "top:205px");
+    add(card("oceaan-1", "kristal", 1, "story"), "", "left:150px;top:262px;width:240px");
+    const list = h("div", { style: "display:grid;gap:6px;text-align:left" }, ...["🥚 Elke dag gratis eieren", "✨ Holo, Goudfolie, Prisma & Oerkristal", "🦖 96 echte dino's met echte weetjes", "🎁 Starter: 10 eieren voor €1,99"].map((t) => h("div", { class: "small", style: "width:auto;font-size:19px;font-weight:800;white-space:nowrap" }, t)));
+    add(list, "cap", "top:625px");
+    add(h("span", { class: "btn", style: "font-size:22px;padding:12px 26px" }, "Speel gratis ▸ dinorijk.live"), "cap", "top:790px");
+    add(h("div", { class: "age" }, "18+ · kaarten hebben geen geldwaarde"), "cap", "top:850px");
+    return 0;
+  },
+};
+
+const total = ads[AD]();
+const anims = () => document.getAnimations();
+anims().forEach((a) => a.pause());
+window.seek = async (t) => {
+  for (const a of anims()) { a.pause(); a.currentTime = t; }
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+};
+// Wacht tot alle dino-plaatjes geladen zijn.
+await Promise.all([...document.images, ...[...document.querySelectorAll("image")].map((i) => i)].map((img) => img.decode ? img.decode().catch(() => {}) : null));
+window.AD_TOTAL = total;
+window.AD_READY = true;
+</script>
+</body>
+</html>
