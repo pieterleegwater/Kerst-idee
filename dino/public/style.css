@@ -262,6 +262,19 @@ th.gold-col, td.gold-col { color: #ffd166; }
 .bone { font-size: 1.6rem; margin: -.8em 0 0 -.6em; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .6)); }
 .forge-ring { background: radial-gradient(circle, transparent 35%, #ffd166 45%, rgba(255, 183, 3, .4) 55%, transparent 70%); }
 
+/* Knoppen onder de onthulling */
+.reveal-actions { display: flex; gap: 12px; justify-content: center; align-items: stretch; flex-wrap: wrap; max-width: 620px; margin: 4px auto 28px; }
+.reveal-actions .btn { margin: 0; }
+.reveal-actions .btn.next { min-width: 160px; }
+.lbl-short { display: none; }
+@media (max-width: 760px) {
+  .reveal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 2px; }
+  .reveal-actions .btn { width: 100%; padding: 12px 10px; font-size: .95rem; line-height: 1.2; }
+  .reveal-actions .btn.next { grid-column: 1 / -1; padding: 15px; font-size: 1.1rem; }
+  .reveal-actions.all-open .btn.next { grid-column: auto; }
+  .reveal-actions .lbl-long { display: none; }
+  .reveal-actions .lbl-short { display: inline; }
+}
 .reveal { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; perspective: 1000px; margin: 22px 0 28px; }
 .flip { width: 172px; aspect-ratio: 5 / 7; position: relative; transform-style: preserve-3d; transition: transform .7s cubic-bezier(.2, .9, .3, 1.2); cursor: pointer; }
 .flip.open { transform: rotateY(180deg); }
@@ -433,7 +446,7 @@ table.odds.legal-table td { vertical-align: top; }
 
 /* Bolletje in het menu: er ligt een beloning klaar */
 nav a.dot { position: relative; }
-nav a.dot::after { content: ""; position: absolute; top: 4px; right: 4px; width: 10px; height: 10px; border-radius: 50%; background: #e63946; box-shadow: 0 0 0 2px var(--bg); }
+nav a.dot::after { content: ""; position: absolute; top: 0; right: 0; width: 9px; height: 9px; border-radius: 50%; background: #e63946; box-shadow: 0 0 0 2px var(--bg); }
 
 /* Dagelijkse beloning */
 .streak { display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap; margin: -6px 0 6px; }
@@ -525,6 +538,7 @@ nav a i { font-style: normal; display: none; }
   nav a.on { background: var(--bg2); color: var(--accent); }
   nav b { position: absolute; top: 0; right: 4px; font-size: .6rem; padding: 0 4px; margin: 0; }
   nav a.logout { display: none; }
+  nav a.dot::after { top: 4px; right: 22%; width: 10px; height: 10px; }
   body:has(nav:not([hidden])) .logout-top { display: block; }
   body:has(nav:not([hidden])) main { padding-bottom: 96px; }
   body:has(nav:not([hidden])) .foot { padding-bottom: calc(90px + env(safe-area-inset-bottom)); }

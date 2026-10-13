@@ -487,25 +487,24 @@ function packsView() {
         return f;
       })
     );
+    // Knoppenbalk: omdraaien + delen naast elkaar, Verder groot eronder. Alles omgedraaid? Dan verdwijnt "Alles omdraaien".
+    const flipAll = el("button", { class: "btn ghost", onclick: () => [...row.querySelectorAll(".flip")].forEach((f, i) => setTimeout(f.flip, i * 260)) }, "Alles omdraaien");
+    const share = el("button", { class: "btn ghost", onclick: () => {
+        const order = { kristal: 0, prisma: 1, goud: 2, holo: 3, normaal: 4 };
+        const rank = { icoon: 0, goud: 1, zilver: 2, brons: 3 };
+        const best = cards.map(({ key, serial }) => ({ ...parseKey(key), serial })).sort((a, b) => order[a.variant] - order[b.variant] || rank[a.card.rarity] - rank[b.card.rarity] || b.card.rating - a.card.rating)[0];
+        row.querySelectorAll(".flip").forEach((f) => f.flip());
+        showShare(best.card, best.variant, best.serial);
+      } }, "📲 ", el("span", { class: "lbl-long" }, "Deel je beste kaart"), el("span", { class: "lbl-short" }, "Delen"));
+    const actions = el("div", { class: "reveal-actions" }, flipAll, share, el("button", { class: "btn next", onclick: render }, "Verder"));
+    row.addEventListener("transitionend", () => {
+      if (!row.querySelector(".flip:not(.open)")) (flipAll.remove(), actions.classList.add("all-open"));
+    });
     wrap.replaceChildren(
       el("h1", {}, "Wat zit erin?"),
       el("p", { class: "muted" }, "Tik op de kaarten om ze om te draaien. Beweeg over een kaart om hem te laten glimmen."),
       row,
-      el(
-        "p",
-        {},
-        el("button", { class: "btn ghost", onclick: () => [...row.querySelectorAll(".flip")].forEach((f, i) => setTimeout(f.flip, i * 260)) }, "Alles omdraaien"),
-        " ",
-        el("button", { class: "btn ghost", onclick: () => {
-            const order = { kristal: 0, prisma: 1, goud: 2, holo: 3, normaal: 4 };
-            const rank = { icoon: 0, goud: 1, zilver: 2, brons: 3 };
-            const best = cards.map(({ key, serial }) => ({ ...parseKey(key), serial })).sort((a, b) => order[a.variant] - order[b.variant] || rank[a.card.rarity] - rank[b.card.rarity] || b.card.rating - a.card.rating)[0];
-            row.querySelectorAll(".flip").forEach((f) => f.flip());
-            showShare(best.card, best.variant, best.serial);
-          } }, "📲 Deel je beste kaart"),
-        " ",
-        el("button", { class: "btn", onclick: render }, "Verder")
-      )
+      actions
     );
     deal([...row.querySelectorAll(".flip")]);
   };
@@ -1284,7 +1283,7 @@ async function route(keepOverlay) {
   const params = new URLSearchParams(query);
   clearInterval(packsView.timer);
   resetTilt();
-  nav.querySelectorAll("a").forEach((a) => a.classList.toggle("on", a.getAttribute("href") === `#${path}`));
+  nav.querySelectorAll("a:not([data-logout])").forEach((a) => a.classList.toggle("on", a.getAttribute("href") === `#${path}`));
   try {
     let node;
     if (path === "/regels") node = rulesView();
